@@ -35,6 +35,7 @@ async def scrape_ryans(product):
 
 #static scrapper
 
+# techland 
 def scrape_techland(product):
     try:
         url = f"https://www.techlandbd.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
@@ -70,9 +71,46 @@ def scrape_techland(product):
         logger.error(f"TechLand error: {e}")
         return {"products": [], "logo": "logo not found"}
     
-
+    
+# skyland     
 def scrape_skyland(product):
-    return {"products": [], "logo": ""}
+    try:
+        url = f"https://www.skyland.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
+        response = requests.get(url, timeout = 15)
+        soap = BeautifulSoup(response.text, "html.parser")
+        
+        products = []
+        
+        logo = soap.select_one("#logo img")
+        if logo:
+            logo_url = logo["src"]
+        else:
+            logo_url = "logo not found"
+            
+        for item in soap.select(".product-layout"):
+            name = item.select_one(".name")
+            price = item.select_one(".price-new")
+            img = item.select_one(".product-img img")
+            link = item.select_one(".product-img")
+            
+            products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name.text.strip() if name else "Name not found",
+                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                    "img": img["src"] if img else "Image not found",
+                    "link": link["href"] if link else "Link not found"
+            })
+            
+        return {"products": products, "logo": logo_url}
+    
+    except Exception as e:
+        
+        logger.error(f"TechLand error: {e}")
+        return {"products": [], "logo": "logo not found"}    
+    
+    
+
+
 
 def scrape_pchouse(product):
     return {"products": [], "logo": ""}
