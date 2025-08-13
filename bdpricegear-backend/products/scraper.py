@@ -64,8 +64,44 @@ async def scrape_startech(product):
         logger.error(f"StarTech error: {e}")
         return results
 
+
+# ryans 
 async def scrape_ryans(product):
-    return {"products": [], "logo": ""}
+    results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
+   
+    try:
+        url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
+       
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=15000)
+            
+            content = await page.content()
+            soup = BeautifulSoup(content, "html.parser")
+            
+            for item in soup.select(".category-single-product"):
+                name = item.select_one(".card-text a")
+                price = item.select_one(".pr-text")
+                img = item.select_one(".image-box img")
+                link = item.select_one(".image-box a")
+                
+                results["products"].append({
+                    "id": str(uuid.uuid4()),
+                    "name": name.text.strip() if name else "Name not found",
+                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                    "img": img["src"] if img else "Image not found",
+                    "link": link["href"] if link else "Link not found"
+                })
+                
+            await browser.close()
+            
+        return results
+
+    except Exception as e:
+        
+        logger.error(f"Ryans error: {e}")
+        return results
 
 
 #static scrapper
