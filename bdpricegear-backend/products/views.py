@@ -24,8 +24,35 @@ def price_comparison(request):
         
         return startech, ryans
     
+    # run dynamic scrapers
     try:
         startech, ryans = asyncio.run(gather_dynamic())
     except Exception as e:
         logger.error(f"Error running dynamic scrapers: {e}")
         startech, ryans = {"products": [], "logo": ""}, {"products": [], "logo": ""}
+        
+    # run static scrapers
+    techland = scrape_techland(product)
+    skyland = scrape_skyland(product)
+    pchouse = scrape_pchouse(product)
+    ultratech = scrape_ultratech(product)
+    binary = scrape_binary(product)
+    potakait = scrape_potakait(product)
+    
+    # combine scraper results
+    all_shops = [
+        {"name": "StarTech", **startech},
+        {"name": "TechLand", **techland},
+        {"name": "SkyLand", **skyland},
+        {"name": "Ryans", **ryans},
+        {"name": "PcHouse", **pchouse},
+        {"name": "UltraTech", **ultratech},
+        {"name": "Binary", **binary},
+        {"name": "PotakaIT", **potakait},
+    ]
+    
+    # filter empty results 
+    shops_with_results = [shop for shop in all_shops if shop.get("products")]
+    
+    return Response(shops_with_results)
+    
