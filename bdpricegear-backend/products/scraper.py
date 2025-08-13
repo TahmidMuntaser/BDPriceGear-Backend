@@ -186,7 +186,36 @@ def scrape_techland(product):
     
 
 def scrape_binary(product):
-    return {"products": [], "logo": ""}
+    try:
+        url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
+        response = requests.get(url, timeout=15)
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        products = []
+        
+        logo = "https://www.binarylogic.com.bd/images/logo.png"
+        
+        for item in soup.select(".single_product"):
+            name = item.select_one(".p-item-name")
+            price = item.select_one(".current_price")
+            img = item.select_one(".p-item-img img")
+            link = item.select_one(".p-item-img a")
+            
+            products.append({
+                "id": str(uuid.uuid4()),
+                "name": name.text.strip() if name else "Name not found",
+                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                "img": img["src"] if img else "Image not found",
+                "link": link["href"] if link else "Link not found"
+            })
+            
+        return {"products": products, "logo": logo}
+    
+    except Exception as e:
+        
+        logger.error(f"Binary error: {e}")
+        return {"products": [], "logo": "logo not found"}
+    
 
 def scrape_potakait(product):
     return {"products": [], "logo": ""}
