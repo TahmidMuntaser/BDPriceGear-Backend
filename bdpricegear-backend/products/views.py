@@ -18,4 +18,14 @@ def price_comparison(request):
     if not product:
         return Response({"error": "Missing 'product' query parameter"}, status=400)
     
+    async def gather_dynamic(product):
+        startech = await scrape_startech(product)
+        ryans = await scrape_ryans(product)
+        
+        return startech, ryans
     
+    try:
+        startech, ryans = asyncio.run(gather_dynamic())
+    except Exception as e:
+        logger.error(f"Error running dynamic scrapers: {e}")
+        startech, ryans = {"products": [], "logo": ""}, {"products": [], "logo": ""}
