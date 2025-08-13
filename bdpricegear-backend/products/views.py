@@ -7,6 +7,7 @@ from .scraper import (
 
 import asyncio
 import logging
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger("products.views")
 
@@ -19,10 +20,17 @@ def price_comparison(request):
         return Response({"error": "Missing 'product' query parameter"}, status=400)
     
     async def gather_dynamic(product):
-        startech = await scrape_startech(product)
-        ryans = await scrape_ryans(product)
-        
-        return startech, ryans
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent="Mozilla/5.0")
+
+            startech_task = scrape_startech(product, context)
+            ryans_task = scrape_ryans(product, context)
+
+            startech, ryans = await asyncio.gather(startech_task, ryans_task)
+
+            await browser.close()
+            return startech, ryans
     
     # run dynamic scrapers
     # try:
@@ -47,7 +55,6 @@ def price_comparison(request):
         {"name": "Ryans", **ryans},
         {"name": "TechLand", **techland},
         {"name": "SkyLand", **skyland},
-        {"name": "Ryans", **ryans},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
         {"name": "Binary", **binary},

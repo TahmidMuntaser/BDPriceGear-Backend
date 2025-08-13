@@ -28,111 +28,67 @@ def normalize_price(text):
 #dynamic scrapper
 
 # startech 
-async def scrape_startech(product):
-    results ={"products": [], "logo": "https://www.startech.com.bd/images/logo.png"}
-    
+async def scrape_startech(product, context):
+    results = {"products": [], "logo": "https://www.startech.com.bd/images/logo.png"}
     try:
         url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
-        
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=15000)
-            
-            content = await page.content()
-            soup = BeautifulSoup(content, "html.parser")
-            
-            for item in soup.select(".p-item"):
-                name = item.select_one(".p-item-name")
-                price = item.select_one(".price-new") or item.select_one(".p-item-price")
-                img = item.select_one(".p-item-img img")
-                link = item.select_one(".p-item-img a")
-                
-                results["products"].append({
-                    "id": str(uuid.uuid4()),
-                    "name": name.text.strip() if name else "Name not found",
-                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                    "img": img["src"] if img else "Image not found",
-                    "link": link["href"] if link else "Link not found"
-                })
-                
-            await browser.close()
-            
+        page = await context.new_page()
+        await page.goto(url, timeout=15000)
+        content = await page.content()
+        soup = BeautifulSoup(content, "html.parser")
+
+        for item in soup.select(".p-item"):
+            name = item.select_one(".p-item-name")
+            price = item.select_one(".price-new") or item.select_one(".p-item-price")
+            img = item.select_one(".p-item-img img")
+            link = item.select_one(".p-item-img a")
+
+            results["products"].append({
+                "id": str(uuid.uuid4()),
+                "name": name.text.strip() if name else "Name not found",
+                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                "img": img["src"] if img else "",
+                "link": link["href"] if link else "#"
+            })
+
+        await page.close()
         return results
-        
     except Exception as e:
         logger.error(f"StarTech error: {e}")
         return results
 
 
 # ryans 
-async def scrape_ryans(product_name):
-    results = {
-        "products": [],
-        "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png",
-        "store": "Ryans"
-    }
-
+async def scrape_ryans(product, context):
+    results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
     try:
-        encoded_product = urllib.parse.quote(product_name)
-        url = f"https://www.ryans.com/search?q={encoded_product}"
-        logger.info(f"Starting scraping Ryans for: {product_name}")
+        url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
+        page = await context.new_page()
+        await page.goto(url, timeout=15000, wait_until="domcontentloaded")
+        await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+        await asyncio.sleep(1)
 
-        async with async_playwright() as p:
-            
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
-            )
-            
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0"
-            )
-            
-            page = await context.new_page()
-            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            
-            # Wait for page body to load
-            await page.wait_for_selector("body", timeout=15000)
-            
-            # Scroll to trigger lazy-loaded products
-            await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-            await asyncio.sleep(2)
+        soup = BeautifulSoup(await page.content(), "html.parser")
+        for item in soup.select(".category-single-product"):
+            name_elem = item.select_one(".card-text a")
+            price_elem = item.select_one(".pr-text")
+            link_elem = item.select_one(".image-box a")
+            img_elem = item.select_one(".image-box img")
 
-            content = await page.content()
-            soup = BeautifulSoup(content, "html.parser")
-            items = soup.select(".category-single-product")
-            logger.info(f"Ryans: found {len(items)} items")
+            results["products"].append({
+                "id": str(uuid.uuid4()),
+                "name": name_elem.get_text(strip=True) if name_elem else "Name not found",
+                "price": normalize_price(price_elem.get_text(strip=True) if price_elem else "0"),
+                "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
+                "img": img_elem["src"] if img_elem else "",
+                "in_stock": True
+            })
 
-            for item in items:
-                try:
-                    name_elem = item.select_one(".card-text a")
-                    price_elem = item.select_one(".pr-text")
-                    link_elem = item.select_one(".image-box a")
-                    img_elem = item.select_one(".image-box img")
-
-                    raw_price = price_elem.get_text(strip=True) if price_elem else "0"
-
-                    results["products"].append({
-                        "id": str(uuid.uuid4()),
-                        "name": name_elem.get_text(strip=True) if name_elem else "Name not found",
-                        "price": normalize_price(raw_price),
-                        "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
-                        "img": img_elem["src"] if img_elem else "",
-                        "in_stock": True
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error processing Ryans product: {e}")
-
-            await browser.close()
-
+        await page.close()
         return results
-
     except Exception as e:
-        logger.error(f"Ryans scraping failed: {e}")
-        return {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png", "error": str(e)}
-
+        logger.error(f"Ryans error: {e}")
+        return results
 
 
 #static scrapper
