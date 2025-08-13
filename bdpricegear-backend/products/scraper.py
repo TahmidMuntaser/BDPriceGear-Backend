@@ -184,7 +184,7 @@ def scrape_techland(product):
         return {"products": [], "logo": "logo not found"}
     
     
-
+# binary 
 def scrape_binary(product):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
@@ -216,6 +216,38 @@ def scrape_binary(product):
         logger.error(f"Binary error: {e}")
         return {"products": [], "logo": "logo not found"}
     
-
+# potakaIT 
 def scrape_potakait(product):
-    return {"products": [], "logo": ""}
+    try:
+        url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
+        response = requests.get(url, timeout=15)
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        products = []
+        
+        logo = soup.select_one(".brand-logo img")
+        if logo:
+            logo_url = logo["src"]
+        else:
+            logo_url = "logo not found"
+        
+        for item in soup.select(".product-item"):
+            name = item.select_one(".title a")
+            price = item.select_one(".price:not(.old)")
+            img = item.select_one(".product-img img")
+            link = item.select_one(".title a")
+            
+            products.append({
+                "id": str(uuid.uuid4()),
+                "name": name.text.strip() if name else "Name not found",
+                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                "img": img["src"] if img else "Image not found",
+                "link": link["href"] if link else "Link not found"
+            })
+            
+        return {"products": products, "logo": logo_url}
+    
+    except Exception as e:
+        
+        logger.error(f"PotakaIT error: {e}")
+        return {"products": [], "logo": "logo not found"}
