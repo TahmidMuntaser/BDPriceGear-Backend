@@ -8,6 +8,7 @@ from .scraper import (
 import asyncio
 import logging
 from playwright.async_api import async_playwright
+from concurrent.futures import ThreadPoolExecutor 
 
 logger = logging.getLogger("products.views")
 
@@ -42,12 +43,27 @@ def price_comparison(request):
         
     startech, ryans = asyncio.run(gather_dynamic(product))
     # run static scrapers
-    techland = scrape_techland(product)
-    skyland = scrape_skyland(product)
-    pchouse = scrape_pchouse(product)
-    ultratech = scrape_ultratech(product)
-    binary = scrape_binary(product)
-    potakait = scrape_potakait(product)
+    
+    def run_static_scrapers(product):
+        with ThreadPoolExecutor() as executor:
+            tasks = [
+                executor.submit(scrape_techland, product),
+                executor.submit(scrape_skyland, product),
+                executor.submit(scrape_pchouse, product),
+                executor.submit(scrape_ultratech, product),
+                executor.submit(scrape_binary, product),
+                executor.submit(scrape_potakait, product),
+            ]
+            return [task.result() for task in tasks]
+        
+    techland, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
+    
+    # techland = scrape_techland(product)
+    # skyland = scrape_skyland(product)
+    # pchouse = scrape_pchouse(product)
+    # ultratech = scrape_ultratech(product)
+    # binary = scrape_binary(product)
+    # potakait = scrape_potakait(product)
     
     # combine scraper results
     all_shops = [
