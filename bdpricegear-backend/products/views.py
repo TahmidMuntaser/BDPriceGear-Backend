@@ -25,28 +25,21 @@ def price_comparison(request):
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(user_agent="Mozilla/5.0")
 
-            startech_task = scrape_startech(product, context)
-            ryans_task = scrape_ryans(product, context)
-
-            startech, ryans = await asyncio.gather(startech_task, ryans_task)
+            tasks = [scrape_ryans(product, context)]
+            results = await asyncio.gather(*tasks)
+            ryans = results[0]
 
             await browser.close()
-            return startech, ryans
-    
-    # run dynamic scrapers
-    # try:
-    #     startech, ryans = asyncio.run(gather_dynamic())
-    # except Exception as e:
-    #     logger.error(f"Error running dynamic scrapers: {e}")
-    #     startech, ryans = {"products": [], "logo": ""}, {"products": [], "logo": ""}
-        
-        
-    startech, ryans = asyncio.run(gather_dynamic(product))
+            return ryans
+
+    ryans = asyncio.run(gather_dynamic(product))
+
     # run static scrapers
     
     def run_static_scrapers(product):
         with ThreadPoolExecutor() as executor:
             tasks = [
+                executor.submit(scrape_startech, product),
                 executor.submit(scrape_techland, product),
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
@@ -56,7 +49,7 @@ def price_comparison(request):
             ]
             return [task.result() for task in tasks]
         
-    techland, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
+    startech, techland, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
     
     # techland = scrape_techland(product)
     # skyland = scrape_skyland(product)

@@ -27,37 +27,6 @@ def normalize_price(text):
     
 #dynamic scrapper
 
-# startech 
-async def scrape_startech(product, context):
-    results = {"products": [], "logo": "https://www.startech.com.bd/images/logo.png"}
-    try:
-        url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
-        page = await context.new_page()
-        await page.goto(url, timeout=15000)
-        content = await page.content()
-        soup = BeautifulSoup(content, "html.parser")
-
-        for item in soup.select(".p-item"):
-            name = item.select_one(".p-item-name")
-            price = item.select_one(".price-new") or item.select_one(".p-item-price")
-            img = item.select_one(".p-item-img img")
-            link = item.select_one(".p-item-img a")
-
-            results["products"].append({
-                "id": str(uuid.uuid4()),
-                "name": name.text.strip() if name else "Name not found",
-                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                "img": img["src"] if img else "",
-                "link": link["href"] if link else "#"
-            })
-
-        await page.close()
-        return results
-    except Exception as e:
-        logger.error(f"StarTech error: {e}")
-        return results
-
-
 # ryans 
 async def scrape_ryans(product, context):
     results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
@@ -92,6 +61,37 @@ async def scrape_ryans(product, context):
 
 
 #static scrapper
+
+# startech 
+def scrape_startech(product):
+    try:
+        url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
+        response = requests.get(url, timeout=15)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        products = []
+        logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
+
+        for item in soup.select(".p-item"):
+            name = item.select_one(".p-item-name")
+            price = item.select_one(".price-new") or item.select_one(".p-item-price")
+            img = item.select_one(".p-item-img img")
+            link = item.select_one(".p-item-img a")
+
+            products.append({
+                "id": str(uuid.uuid4()),
+                "name": name.text.strip() if name else "Name not found",
+                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                "img": img["src"] if img else "Image not found",
+                "link": link["href"] if link else "Link not found"
+            })
+
+        return {"products": products, "logo": logo_url}
+
+    except Exception as e:
+        logger.error(f"StarTech error: {e}")
+        return {"products": [], "logo": "logo not found"}
+
 
 # techland 
 def scrape_techland(product):
