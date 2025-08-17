@@ -25,7 +25,12 @@ SECRET_KEY = 'django-insecure-r_sem^z(0jmuh)7c4g523_$jpf=bn_1^xfv9#4+ee@=e%x8%h$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['bdpricegear.onrender.com', 'localhost', '127.0.0.1']
+
+# Static files
+import os
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
 # Application definition
