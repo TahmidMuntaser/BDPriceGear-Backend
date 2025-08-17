@@ -97,38 +97,64 @@ def scrape_startech(product):
 def scrape_techland(product):
     try:
         url = f"https://www.techlandbd.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout = 15)
-        soap = BeautifulSoup(response.text, "html.parser")
         
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(response.text, "html.parser")
         products = []
         
-        logo = soap.select_one("#logo img")
-        if logo:
-            logo_url = logo["src"]
-        else:
-            logo_url = "logo not found"
-            
-        for item in soap.select(".product-layout"):
-            name = item.select_one(".name")
-            price = item.select_one(".price-new")
-            img = item.select_one(".image img")
-            link = item.select_one(".product-img")
-            
-            products.append({
+        logo = soup.select_one("a.navbar-brand img")
+        logo_url = logo["src"] if logo and "src" in logo.attrs else "https://via.placeholder.com/150"
+        
+        product_items = soup.select('div.flex.overflow-hidden.transition-all')
+        
+        if not product_items:
+            logger.warning(f"No products found on Techland for: {product}")
+            return {"products": [], "logo": logo_url}
+        
+        for item in product_items:
+            try:
+             
+                name_elem = item.select_one('h3.text-xs a') or item.select_one('h3.text-sm a')
+                price_container = item.select_one('.price-tag')
+                img_elem = item.select_one('div.relative img')
+                link_elem = name_elem  
+                
+                price_text = ""
+                if price_container:
+
+                    texts = [text.strip() for text in price_container.find_all(text=True, recursive=True) if text.strip()]
+                    if texts:
+                        
+                        price_text = texts[0]
+                
+                if not name_elem or not price_text:
+                    continue
+                    
+                products.append({
                     "id": str(uuid.uuid4()),
-                    "name": name.text.strip() if name else "Name not found",
-                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                    "img": img["src"] if img else "Image not found",
-                    "link": link["href"] if link else "Link not found"
-            })
-            
+                    "name": name_elem.text.strip(),
+                    "price": normalize_price(price_text),
+                    "img": img_elem.get("src", "") if img_elem else "",
+                    "link": link_elem.get("href", "")
+                })
+                
+            except Exception as e:
+                logger.warning(f"Techland product parse error: {e}")
+                continue
+                
         return {"products": products, "logo": logo_url}
     
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Techland network error: {e}")
     except Exception as e:
+        logger.error(f"Techland general error: {e}", exc_info=True)
         
-        logger.error(f"TechLand error: {e}")
-        return {"products": [], "logo": "logo not found"}
-    
+    return {"products": [], "logo": "https://via.placeholder.com/150"}
     
 # skyland     
 def scrape_skyland(product):
