@@ -21,5 +21,5 @@ from django.http import HttpResponseRedirect
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('products.urls')),
-     path('', lambda request: HttpResponseRedirect('/api/price-comparison/')), 
+    path('', lambda request: HttpResponseRedirect('/api/price-comparison/')), 
 ]
