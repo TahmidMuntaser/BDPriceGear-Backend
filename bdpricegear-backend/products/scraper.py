@@ -66,7 +66,13 @@ async def scrape_ryans(product, context):
 def scrape_startech(product):
     try:
         url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -272,7 +278,13 @@ def scrape_ultratech(product):
 def scrape_binary(product):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        response = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
