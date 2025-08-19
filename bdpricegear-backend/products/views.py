@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("products.views")
 
-@api_view(['GET'])
+@api_view(['GET', 'HEAD'])
 def price_comparison(request):
     
     product = request.GET.get('product')
