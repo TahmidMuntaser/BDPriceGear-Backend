@@ -1,5 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from .scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary, scrape_potakait
@@ -11,6 +13,24 @@ from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor 
 
 logger = logging.getLogger("products.views")
+
+@swagger_auto_schema(
+    method='get',
+    manual_parameters=[
+        openapi.Parameter(
+            'product',
+            openapi.IN_QUERY,
+            description="Product name to search for (e.g., 'laptop', 'mouse', 'keyboard')",
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ],
+    operation_description="Compare product prices across multiple Bangladeshi tech shops",
+    responses={
+        200: "List of shops with products and prices",
+        400: "Missing product query parameter"
+    }
+)
 
 @api_view(['GET', 'HEAD'])
 def price_comparison(request):

@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_yasg',
     'products',  
 ]
 
@@ -80,6 +81,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
+# swagger settings 
+SWAGGER_SETTINGS = {
+    'SHOW_REQUEST_HEADERS': True,
+    'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
+    'USE_SESSION_AUTH': False,
+    'JSON_EDITOR': True,
+    'VALIDATOR_URL': None,
+    'AUTO_SCHEMA_TITLE': True,
+    'OPERATIONS_SORTER': 'alpha',
+    'TAGS_SORTER': 'alpha',
+    'DOC_EXPANSION': 'none',
+    'DEEP_LINKING': True,
+    'SHOW_EXTENSIONS': False,
+    'SHOW_COMMON_EXTENSIONS': False,
+    'DEFAULT_MODEL_RENDERING': 'model',
+    'DEFAULT_MODEL_DEPTH': 3,
+    'PERSIST_AUTH': True,
+    'DISPLAY_OPERATION_ID': False,
+    'TRY_IT_OUT_ENABLED': True,
+    'FILTER': True,
+    'WITH_CREDENTIALS': False,
+    'OAUTH2_REDIRECT_URL': None,
+    'OAUTH2_CONFIG': {},
+    'SHOW_REQUEST_HEADERS': False,  
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
