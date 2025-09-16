@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .scraper import (
-    scrape_startech, scrape_ryans, scrape_techland, scrape_skyland,
+    scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary, scrape_potakait
 )
 
@@ -40,7 +40,7 @@ def price_comparison(request):
         with ThreadPoolExecutor() as executor:
             tasks = [
                 executor.submit(scrape_startech, product),
-                executor.submit(scrape_techland, product),
+                # executor.submit(scrape_techland, product),
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
                 executor.submit(scrape_ultratech, product),
@@ -49,7 +49,7 @@ def price_comparison(request):
             ]
             return [task.result() for task in tasks]
         
-    startech, techland, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
+    startech, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
     
     # techland = scrape_techland(product)
     # skyland = scrape_skyland(product)
@@ -62,7 +62,7 @@ def price_comparison(request):
     all_shops = [
         {"name": "StarTech", **startech},
         {"name": "Ryans", **ryans},
-        {"name": "TechLand", **techland},
+        # {"name": "TechLand", **techland},
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},

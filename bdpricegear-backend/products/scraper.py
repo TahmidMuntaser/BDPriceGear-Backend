@@ -100,67 +100,67 @@ def scrape_startech(product):
 
 
 # techland 
-def scrape_techland(product):
-    try:
-        url = f"https://www.techlandbd.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
+# def scrape_techland(product):
+#     try:
+#         url = f"https://www.techlandbd.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
         
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        }
+#         headers = {
+#             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+#             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+#         }
         
-        response = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.text, "html.parser")
-        products = []
+#         response = requests.get(url, headers=headers, timeout=15)
+#         soup = BeautifulSoup(response.text, "html.parser")
+#         products = []
         
-        logo = soup.select_one("a.navbar-brand img")
-        logo_url = logo["src"] if logo and "src" in logo.attrs else "https://via.placeholder.com/150"
+#         logo = soup.select_one("a.navbar-brand img")
+#         logo_url = logo["src"] if logo and "src" in logo.attrs else "https://via.placeholder.com/150"
         
-        product_items = soup.select('div.flex.overflow-hidden.transition-all')
+#         product_items = soup.select('div.flex.overflow-hidden.transition-all')
         
-        if not product_items:
-            logger.warning(f"No products found on Techland for: {product}")
-            return {"products": [], "logo": logo_url}
+#         if not product_items:
+#             logger.warning(f"No products found on Techland for: {product}")
+#             return {"products": [], "logo": logo_url}
         
-        for item in product_items:
-            try:
+#         for item in product_items:
+#             try:
              
-                name_elem = item.select_one('h3.text-xs a') or item.select_one('h3.text-sm a')
-                price_container = item.select_one('.price-tag')
-                img_elem = item.select_one('div.relative img')
-                link_elem = name_elem  
+#                 name_elem = item.select_one('h3.text-xs a') or item.select_one('h3.text-sm a')
+#                 price_container = item.select_one('.price-tag')
+#                 img_elem = item.select_one('div.relative img')
+#                 link_elem = name_elem  
                 
-                price_text = ""
-                if price_container:
+#                 price_text = ""
+#                 if price_container:
 
-                    texts = [text.strip() for text in price_container.find_all(text=True, recursive=True) if text.strip()]
-                    if texts:
+#                     texts = [text.strip() for text in price_container.find_all(text=True, recursive=True) if text.strip()]
+#                     if texts:
                         
-                        price_text = texts[0]
+#                         price_text = texts[0]
                 
-                if not name_elem or not price_text:
-                    continue
+#                 if not name_elem or not price_text:
+#                     continue
                     
-                products.append({
-                    "id": str(uuid.uuid4()),
-                    "name": name_elem.text.strip(),
-                    "price": normalize_price(price_text),
-                    "img": img_elem.get("src", "") if img_elem else "",
-                    "link": link_elem.get("href", "")
-                })
+#                 products.append({
+#                     "id": str(uuid.uuid4()),
+#                     "name": name_elem.text.strip(),
+#                     "price": normalize_price(price_text),
+#                     "img": img_elem.get("src", "") if img_elem else "",
+#                     "link": link_elem.get("href", "")
+#                 })
                 
-            except Exception as e:
-                logger.warning(f"Techland product parse error: {e}")
-                continue
+#             except Exception as e:
+#                 logger.warning(f"Techland product parse error: {e}")
+#                 continue
                 
-        return {"products": products, "logo": logo_url}
+#         return {"products": products, "logo": logo_url}
     
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Techland network error: {e}")
-    except Exception as e:
-        logger.error(f"Techland general error: {e}", exc_info=True)
+#     except requests.exceptions.RequestException as e:
+#         logger.error(f"Techland network error: {e}")
+#     except Exception as e:
+#         logger.error(f"Techland general error: {e}", exc_info=True)
         
-    return {"products": [], "logo": "https://via.placeholder.com/150"}
+#     return {"products": [], "logo": "https://via.placeholder.com/150"}
     
 # skyland     
 def scrape_skyland(product):
