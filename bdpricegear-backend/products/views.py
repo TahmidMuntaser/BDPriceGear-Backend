@@ -64,12 +64,15 @@ def price_comparison(request):
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
                 executor.submit(scrape_ultratech, product),
-                executor.submit(scrape_binary, product),
+                # executor.submit(scrape_binary, product),  # Disabled: blocked on cloud servers
                 executor.submit(scrape_potakait, product),
             ]
             return [task.result() for task in tasks]
         
-    startech, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
+    startech, skyland, pchouse, ultratech, potakait = run_static_scrapers(product)
+    
+    # Create empty result for binary to maintain structure
+    binary = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
     
     # techland = scrape_techland(product)
     # skyland = scrape_skyland(product)
