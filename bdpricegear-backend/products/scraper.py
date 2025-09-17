@@ -329,7 +329,7 @@ def scrape_binary(product):
             logger.warning(f"Binary Logic returned status {response.status_code}")
             return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
         
-        response.raise_for_status()
+        # response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
