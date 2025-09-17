@@ -276,31 +276,56 @@ def scrape_ultratech(product):
     
 # binary 
 from urllib.parse import urljoin
+import time
+import random
 
 def scrape_binary(product):
     try:
+        # Add random delay to appear more human-like
+        time.sleep(random.uniform(1, 3))
+        
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
+        
+        # More comprehensive headers to mimic real browser
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,bn;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
             "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
             "Cache-Control": "max-age=0",
-            "Referer": "https://www.binarylogic.com.bd/",
+            "DNT": "1",
+            "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-CH-UA-Mobile": "?0",
+            "Sec-CH-UA-Platform": '"Windows"',
+            "Referer": "https://www.google.com/",
         }
         
-        # Try with session for better success rate
+        # Use session with cookies and connection pooling
         session = requests.Session()
         session.headers.update(headers)
         
-        response = session.get(url, timeout=20)
+        # First, visit the homepage to get cookies
+        try:
+            session.get("https://www.binarylogic.com.bd/", timeout=15)
+            time.sleep(random.uniform(0.5, 1.5))
+        except:
+            pass  # Continue even if homepage fails
+        
+        # search req
+        response = session.get(url, timeout=25)
+        
+        if response.status_code == 403:
+            logger.warning(f"Binary Logic blocked request (403) - trying alternative approach")
+            return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+        
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
