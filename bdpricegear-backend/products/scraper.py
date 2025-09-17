@@ -323,9 +323,15 @@ def scrape_binary(product):
 
         return {"products": products, "logo": logo}
 
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            logger.warning(f"Binary Logic blocked request (403 Forbidden) - this is common on cloud servers")
+        else:
+            logger.error(f"Binary HTTP error: {e}")
+        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
     except Exception as e:
-        logger.error(f"Binary error: {e}", exc_info=True)
-        return {"products": [], "logo": "logo not found"}
+        logger.error(f"Binary error: {e}")
+        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
 
     
 # potakaIT 
