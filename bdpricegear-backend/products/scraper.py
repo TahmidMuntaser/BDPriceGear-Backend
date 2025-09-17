@@ -284,10 +284,23 @@ def scrape_binary(product):
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "
                           "Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
             "Referer": "https://www.binarylogic.com.bd/",
         }
-        response = requests.get(url, headers=headers, timeout=20)
+        
+        # Try with session for better success rate
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        response = session.get(url, timeout=20)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
