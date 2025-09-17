@@ -323,7 +323,10 @@ def scrape_binary(product):
         response = session.get(url, timeout=25)
         
         if response.status_code == 403:
-            logger.warning(f"Binary Logic blocked request (403) - trying alternative approach")
+            logger.warning(f"Binary Logic blocked request (403) for product: {product}")
+            return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+        elif response.status_code != 200:
+            logger.warning(f"Binary Logic returned status {response.status_code}")
             return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
         
         response.raise_for_status()
