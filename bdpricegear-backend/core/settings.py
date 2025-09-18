@@ -68,6 +68,7 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
     "https://bdpricegear.vercel.app",  
+    "https://bdpricegear.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
