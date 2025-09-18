@@ -67,11 +67,46 @@ MIDDLEWARE = [
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
+    "http://localhost:3001",
+    "http://localhost:5173",  
+    "http://localhost:8080",  
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001", 
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
     "https://bdpricegear.vercel.app",  
     "https://bdpricegear.onrender.com",
 ]
 
+# For development, you can also use CORS_ALLOW_ALL_ORIGINS = True (but not for production)
+# CORS_ALLOW_ALL_ORIGINS = True  # Uncomment this line for development only
+
 CORS_ALLOW_CREDENTIALS = True
+
+# Additional CORS settings for better API compatibility
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Allow preflight requests to be cached for 24 hours
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 ROOT_URLCONF = 'core.urls'
 

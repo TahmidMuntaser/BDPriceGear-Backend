@@ -32,8 +32,12 @@ logger = logging.getLogger("products.views")
     }
 )
 
-@api_view(['GET', 'HEAD'])
+@api_view(['GET', 'HEAD', 'OPTIONS'])
 def price_comparison(request):
+    
+    # Handle CORS preflight requests
+    if request.method == 'OPTIONS':
+        return Response(status=200)
     
     product = request.GET.get('product')
     # placeholder endpoint
