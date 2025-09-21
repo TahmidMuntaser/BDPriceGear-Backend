@@ -39,6 +39,9 @@ def price_comparison(request):
     if request.method == 'OPTIONS':
         return Response(status=200)
     
+    if request.method == 'HEAD':   
+        return Response(status=200)
+    
     product = request.GET.get('product')
     # placeholder endpoint
     if not product:
