@@ -4,7 +4,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
-    scrape_pchouse, scrape_ultratech, scrape_binary, scrape_potakait
+    scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
 )
 
 import asyncio
@@ -49,14 +49,17 @@ def price_comparison(request):
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(user_agent="Mozilla/5.0")
 
-            tasks = [scrape_ryans(product, context)]
+            tasks = [
+                scrape_ryans(product, context),
+                scrape_binary_playwright(product, context) 
+            ]
             results = await asyncio.gather(*tasks)
-            ryans = results[0]
+            ryans, binary = results
 
             await browser.close()
-            return ryans
+            return ryans, binary
 
-    ryans = asyncio.run(gather_dynamic(product))
+    ryans, binary = asyncio.run(gather_dynamic(product))
 
     # run static scrapers
     
@@ -64,16 +67,14 @@ def price_comparison(request):
         with ThreadPoolExecutor() as executor:
             tasks = [
                 executor.submit(scrape_startech, product),
-                # executor.submit(scrape_techland, product),
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
                 executor.submit(scrape_ultratech, product),
-                executor.submit(scrape_binary, product), 
                 executor.submit(scrape_potakait, product),
             ]
             return [task.result() for task in tasks]
-        
-    startech, skyland, pchouse, ultratech, binary, potakait = run_static_scrapers(product)
+
+    startech, skyland, pchouse, ultratech, potakait = run_static_scrapers(product)
     
     # techland = scrape_techland(product)
     # skyland = scrape_skyland(product)

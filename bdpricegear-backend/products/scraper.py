@@ -273,93 +273,38 @@ def scrape_ultratech(product):
         logger.error(f"UltraTech error: {e}")
         return {"products": [], "logo": "logo not found"}
     
-    
-# binary 
-from urllib.parse import urljoin
-import time
-import random
-
-def scrape_binary(product):
+ # scraper.py
+async def scrape_binary_playwright(product, context):
+    results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
     try:
-        # Add random delay to appear more human-like
-        time.sleep(random.uniform(1, 3))
-        
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
-        
-        # More comprehensive headers to mimic real browser
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 (KHTML, like Gecko) "
-                          "Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9,bn;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-            "DNT": "1",
-            "Sec-CH-UA": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            "Sec-CH-UA-Mobile": "?0",
-            "Sec-CH-UA-Platform": '"Windows"',
-            "Referer": "https://www.google.com/",
-        }
-        
-        # Use session with cookies and connection pooling
-        session = requests.Session()
-        session.headers.update(headers)
-        
-        # First, visit the homepage to get cookies
-        try:
-            session.get("https://www.binarylogic.com.bd/", timeout=15)
-            time.sleep(random.uniform(0.5, 1.5))
-        except:
-            pass  # Continue even if homepage fails
-        
-        # search req
-        response = session.get(url, timeout=25)
-        
-        if response.status_code == 403:
-            logger.warning(f"Binary Logic blocked request (403) for product: {product}")
-            return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
-        elif response.status_code != 200:
-            logger.warning(f"Binary Logic returned status {response.status_code}")
-            return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
-        
-        # response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+        page = await context.new_page()
+        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+        await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+        await asyncio.sleep(2)
 
-        products = []
-        logo = "https://www.binarylogic.com.bd/images/logo.png"
+        soup = BeautifulSoup(await page.content(), "html.parser")
 
         for item in soup.select(".single_product"):
-            name = item.select_one(".p-item-name")
-            price = item.select_one(".current_price")
-            img = item.select_one(".p-item-img img")
-            link = item.select_one(".p-item-img a")
+            name_elem = item.select_one(".p-item-name")
+            price_elem = item.select_one(".current_price")
+            img_elem = item.select_one(".p-item-img img")
+            link_elem = item.select_one(".p-item-img a")
 
-            products.append({
+            results["products"].append({
                 "id": str(uuid.uuid4()),
-                "name": name.text.strip() if name else "Name not found",
-                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                "img": urljoin("https://www.binarylogic.com.bd", img["src"]) if img else "Image not found",
-                "link": urljoin("https://www.binarylogic.com.bd", link["href"]) if link else "Link not found"
+                "name": name_elem.get_text(strip=True) if name_elem else "Name not found",
+                "price": normalize_price(price_elem.get_text(strip=True) if price_elem else "0"),
+                "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
+                "img": urllib.parse.urljoin(url, img_elem["src"]) if img_elem else "",
+                "in_stock": True
             })
 
-        return {"products": products, "logo": logo}
-
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 403:
-            logger.warning(f"Binary Logic blocked request (403 Forbidden) - this is common on cloud servers")
-        else:
-            logger.error(f"Binary HTTP error: {e}")
-        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+        await page.close()
+        return results
     except Exception as e:
-        logger.error(f"Binary error: {e}")
-        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+        logger.error(f"Binary Playwright error: {e}")
+        return results
 
     
 # potakaIT 
