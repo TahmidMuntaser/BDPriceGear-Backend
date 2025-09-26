@@ -165,7 +165,8 @@ def scrape_startech(product):
 # skyland     
 def scrape_skyland(product):
     try:
-        url = f"https://www.skyland.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
+        base_url = "https://www.skyland.com.bd/"
+        url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(product)}"
         response = requests.get(url, timeout = 15)
         soap = BeautifulSoup(response.text, "html.parser")
         
@@ -174,21 +175,44 @@ def scrape_skyland(product):
         logo = soap.select_one("#logo img")
         if logo:
             logo_url = logo["src"]
+            # Ensure logo URL is absolute
+            if not logo_url.startswith(('http://', 'https://')):
+                logo_url = urllib.parse.urljoin(base_url, logo_url)
         else:
             logo_url = "logo not found"
             
         for item in soap.select(".product-layout"):
             name = item.select_one(".name")
             price = item.select_one(".price-new")
-            img = item.select_one(".product-img img")
-            link = item.select_one(".product-img")
+            # Try multiple selector patterns for the image
+            img = item.select_one(".image img") or item.select_one(".product-img img") or item.select_one("img")
+            link = item.select_one(".product-img") or item.select_one(".name a")
+            
+            # Extract image URL properly
+            img_url = "Image not found"
+            if img and img.has_attr("src"):
+                img_url = img["src"]
+                # Make sure it's an absolute URL
+                if not img_url.startswith(('http://', 'https://')):
+                    img_url = urllib.parse.urljoin(base_url, img_url)
+            elif img and img.has_attr("data-src"):
+                img_url = img["data-src"]
+                if not img_url.startswith(('http://', 'https://')):
+                    img_url = urllib.parse.urljoin(base_url, img_url)
+                    
+            # Get product link
+            link_url = "Link not found"
+            if link and link.has_attr("href"):
+                link_url = link["href"]
+                if not link_url.startswith(('http://', 'https://')):
+                    link_url = urllib.parse.urljoin(base_url, link_url)
             
             products.append({
                     "id": str(uuid.uuid4()),
                     "name": name.text.strip() if name else "Name not found",
                     "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                    "img": img["src"] if img else "Image not found",
-                    "link": link["href"] if link else "Link not found"
+                    "img": img_url,
+                    "link": link_url
             })
             
         return {"products": products, "logo": logo_url}
