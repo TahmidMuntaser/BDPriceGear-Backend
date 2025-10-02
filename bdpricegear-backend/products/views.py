@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from .cache_manager import price_cache
 from .scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
@@ -9,8 +10,9 @@ from .scraper import (
 
 import asyncio
 import logging
+import time
 from playwright.async_api import async_playwright
-from concurrent.futures import ThreadPoolExecutor 
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("products.views")
 
@@ -31,7 +33,6 @@ logger = logging.getLogger("products.views")
         400: "Missing product query parameter"
     }
 )
-
 @api_view(['GET', 'HEAD', 'OPTIONS'])
 def price_comparison(request):
     
@@ -43,9 +44,18 @@ def price_comparison(request):
         return Response(status=200)
     
     product = request.GET.get('product')
-    # placeholder endpoint
+    
     if not product:
         return Response({"error": "Missing 'product' query parameter"}, status=400)
+    
+    # Check cache first
+    cached_result = price_cache.get(product)
+    if cached_result:
+        logger.info(f"Cache hit for '{product}'")
+        return Response(cached_result)
+    
+    # Clean up expired cache 
+    price_cache.clear_expired()
     
     async def gather_dynamic(product):
         async with async_playwright() as p:
@@ -65,7 +75,6 @@ def price_comparison(request):
     ryans, binary = asyncio.run(gather_dynamic(product))
 
     # run static scrapers
-    
     def run_static_scrapers(product):
         with ThreadPoolExecutor() as executor:
             tasks = [
@@ -79,18 +88,10 @@ def price_comparison(request):
 
     startech, skyland, pchouse, ultratech, potakait = run_static_scrapers(product)
     
-    # techland = scrape_techland(product)
-    # skyland = scrape_skyland(product)
-    # pchouse = scrape_pchouse(product)
-    # ultratech = scrape_ultratech(product)
-    # binary = scrape_binary(product)
-    # potakait = scrape_potakait(product)
-    
     # combine scraper results
     all_shops = [
         {"name": "StarTech", **startech},
         {"name": "Ryans", **ryans},
-        # {"name": "TechLand", **techland},
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
@@ -101,5 +102,8 @@ def price_comparison(request):
     # filter empty results 
     shops_with_results = [shop for shop in all_shops if shop.get("products")]
     
-    return Response(shops_with_results)
+    # Cache the results: 5 min
+    price_cache.set(product, shops_with_results, ttl=300)
+    logger.info(f"Cached results for '{product}' - Found {len(shops_with_results)} shops")
     
+    return Response(shops_with_results)
