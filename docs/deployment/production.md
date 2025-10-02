@@ -146,139 +146,7 @@ heroku config:set DEBUG=False
 git push heroku main
 ```
 
----
 
-## 🔧 Manual VPS Deployment
-
-### Prerequisites
-- Ubuntu 20.04+ server  
-- Domain name (optional)
-- SSH access
-
-### Step 1: Server Setup (Install Dependencies)
-
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Python, Node.js (for Playwright), and Nginx
-sudo apt install python3 python3-pip python3-venv nginx -y
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-```
-
-### Step 2: Deploy Your Project
-
-```bash
-# Create app user and directory
-sudo adduser bdpricegear
-su - bdpricegear
-mkdir ~/app && cd ~/app
-
-# Clone your repository
-git clone https://github.com/TahmidMuntaser/BDPriceGear-Backend.git .
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install your actual dependencies
-pip install -r requirements.txt
-
-# Install Playwright browsers (for your scrapers)
-playwright install chromium
-```
-
-### Step 3: Configure Environment
-
-Create production `.env` file:
-```env
-SECRET_KEY=your-secure-secret-key-here
-DEBUG=False
-# Add your domain to ALLOWED_HOSTS in settings.py
-```
-
-Update `ALLOWED_HOSTS` in `bdpricegear-backend/core/settings.py`:
-```python
-ALLOWED_HOSTS = ['your-domain.com', 'bdpricegear.onrender.com', 'localhost']
-```
-
-### Step 4: Prepare Django Application
-
-```bash
-# Navigate to Django project
-cd bdpricegear-backend
-
-# Collect static files (using your WhiteNoise config)
-python manage.py collectstatic --noinput
-
-# Apply database migrations
-python manage.py migrate
-
-# Test the application
-python manage.py check --deploy
-```
-
-### Step 5: Configure Gunicorn Service
-
-Create `/etc/systemd/system/bdpricegear.service`:
-```ini
-[Unit]
-Description=BDPriceGear API
-After=network.target
-
-[Service]
-User=bdpricegear
-Group=www-data
-WorkingDirectory=/home/bdpricegear/app/bdpricegear-backend
-Environment="PATH=/home/bdpricegear/app/venv/bin"
-ExecStart=/home/bdpricegear/app/venv/bin/gunicorn --workers 3 --bind unix:/home/bdpricegear/app/bdpricegear.sock core.wsgi:application
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-# Start the service
-sudo systemctl daemon-reload
-sudo systemctl start bdpricegear
-sudo systemctl enable bdpricegear
-sudo systemctl status bdpricegear  # Check if running
-```
-
-### Step 6: Configure Nginx Reverse Proxy
-
-Create `/etc/nginx/sites-available/bdpricegear`:
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com www.your-domain.com;
-
-    # Static files served by WhiteNoise, but we can cache them at Nginx level
-    location /static/ {
-        proxy_pass http://unix:/home/bdpricegear/app/bdpricegear.sock;
-        proxy_cache_valid 200 1d;
-        add_header Cache-Control "public, max-age=86400";
-    }
-
-    # API requests with longer timeouts (for web scraping)
-    location / {
-        include proxy_params;
-        proxy_pass http://unix:/home/bdpricegear/app/bdpricegear.sock;
-        proxy_read_timeout 120s;    # Allow time for scraping
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-    }
-}
-```
-
-```bash
-# Enable site and restart Nginx
-sudo ln -s /etc/nginx/sites-available/bdpricegear /etc/nginx/sites-enabled
-sudo nginx -t
-sudo systemctl restart nginx
-```
 
 ---
 
@@ -313,63 +181,19 @@ django-cors-headers==4.3.1
 python-dotenv==1.1.1
 ```
 
-### 2. Environment-Specific Settings
+### 2. Production Security (Optional Enhancements)
 
-Create `bdpricegear-backend/core/settings_prod.py` for additional production settings:
+Your current `settings.py` is production-ready, but you can add these security headers if needed:
+
 ```python
-from .settings import *
-
-# Override for production
+# Add to your existing settings.py for enhanced security
 if not DEBUG:
-    # Security headers
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True 
     X_FRAME_OPTIONS = 'DENY'
-    
-    # Force HTTPS in production
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    
-    # Logging
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'handlers': {
-            'file': {
-                'level': 'INFO',
-                'class': 'logging.FileHandler',
-                'filename': 'bdpricegear.log',
-            },
-        },
-        'loggers': {
-            'django': {
-                'handlers': ['file'],
-                'level': 'INFO',
-                'propagate': True,
-            },
-            'products.views': {
-                'handlers': ['file'],
-                'level': 'INFO',
-                'propagate': True,
-            },
-        },
-    }
 ```
 
-### 3. SSL Certificate (Let's Encrypt)
 
-```bash
-# Install Certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Get SSL certificate
-sudo certbot --nginx -d your-domain.com
-
-# Auto-renewal (already handles renewal)
-sudo crontab -e
-# Add: 0 12 * * * /usr/bin/certbot renew --quiet
-```
 
 ---
 
@@ -409,41 +233,20 @@ sudo crontab -e
    python -c "import os; print(os.environ.get('DEBUG', 'Not Set'))"
    ```
 
-### Your Specific Dependencies Issues
+### Your Specific Performance Characteristics
 
-If Playwright fails to install:
+- **First request**: 10-20 seconds (scraping 7 sites)
+- **Cached requests**: < 1 second (5-minute cache)  
+- **Memory usage**: ~200-500MB (Playwright browsers)
+- **Concurrent requests**: Handle with care (resource intensive)
+
+### Quick Health Check
+
+Test your deployed API:
 ```bash
-# Manual installation
-wget -q -O - https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-sudo apt-get install chromium-browser
-export PLAYWRIGHT_BROWSERS_PATH=/usr/bin/chromium-browser
+# Test the main endpoint
+curl "https://your-domain.com/api/price-comparison/?product=mouse"
+
+# Check if all scrapers are working
+curl "https://your-domain.com/docs/"  # Should show Swagger UI
 ```
-
-### Performance Monitoring
-
-Your API characteristics:
-- **Cold start**: 15-20 seconds (first request)
-- **Cached requests**: < 1 second  
-- **Memory usage**: ~200-500MB (with Playwright)
-- **CPU usage**: High during scraping
-
-### Health Check for Your API
-
-Add to `products/views.py`:
-```python
-@api_view(['GET'])
-def health_check(request):
-    return Response({
-        'status': 'healthy',
-        'scrapers': ['StarTech', 'Ryans', 'SkyLand', 'PcHouse', 'UltraTech', 'Binary', 'PotakaIT'],
-        'cache_enabled': True,
-        'playwright_ready': True
-    })
-```
-
-Add to `products/urls.py`:
-```python
-path('health/', health_check, name='health-check'),
-```
-
-Then monitor: `https://your-domain.com/api/health/`
