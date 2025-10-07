@@ -12,24 +12,7 @@ from playwright.async_api import async_playwright
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
 
-# Shared session for better performance with connection pooling
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Connection": "keep-alive",
-})
-# Configure connection pooling for high-latency connections
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-adapter = HTTPAdapter(
-    pool_connections=10,
-    pool_maxsize=20,
-    max_retries=Retry(total=1, backoff_factor=0.1)
-)
-session.mount('http://', adapter)
-session.mount('https://', adapter)
 
 # extracts and cleans price values
 def normalize_price(text):
@@ -52,9 +35,9 @@ async def scrape_ryans(product, context):
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
         for item in soup.select(".category-single-product"):
@@ -85,7 +68,13 @@ async def scrape_ryans(product, context):
 def scrape_startech(product):
     try:
         url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=8)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -180,7 +169,7 @@ def scrape_skyland(product):
     try:
         base_url = "https://www.skyland.com.bd/"
         url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=8)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -241,7 +230,7 @@ def scrape_skyland(product):
 def scrape_pchouse(product):
     try:
         url = f"https://www.pchouse.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=8)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -278,7 +267,7 @@ def scrape_pchouse(product):
 def scrape_ultratech(product):
     try:
         url = f"https://www.ultratech.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=8)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -316,9 +305,9 @@ async def scrape_binary_playwright(product, context):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(1)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
 
@@ -348,7 +337,7 @@ async def scrape_binary_playwright(product, context):
 def scrape_potakait(product):
     try:
         url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=8)
+        response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
