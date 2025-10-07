@@ -15,7 +15,7 @@ logger = logging.getLogger("scraper")
 
 # Detect environment and set adaptive timeouts
 IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
-PLAYWRIGHT_TIMEOUT = 15000 if IS_CLOUD else 8000  # 15s on cloud, 8s locally
+PLAYWRIGHT_TIMEOUT = 25000 if IS_CLOUD else 8000  # 25s on cloud, 8s locally
 HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally
 
 
@@ -46,12 +46,25 @@ async def scrape_ryans(product):
         
         # Create individual browser instance for reliability
         playwright = await async_playwright().start()
+        
+        # Cloud-optimized browser args
+        browser_args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        if IS_CLOUD:
+            browser_args.extend([
+                '--single-process',
+                '--disable-extensions',
+                '--disable-plugins', 
+                '--disable-images',
+                '--disable-web-security',
+                '--memory-pressure-off'
+            ])
+        
         browser = await asyncio.wait_for(
             playwright.chromium.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+                args=browser_args
             ),
-            timeout=10.0  # 10 second timeout for browser launch
+            timeout=15.0  # Increased timeout for cloud
         )
         logger.info("✅ Ryans: Browser launched successfully")
         context = await browser.new_context(user_agent="Mozilla/5.0")
@@ -348,12 +361,25 @@ async def scrape_binary_playwright(product):
         
         # Create individual browser instance for reliability
         playwright = await async_playwright().start()
+        
+        # Cloud-optimized browser args
+        browser_args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        if IS_CLOUD:
+            browser_args.extend([
+                '--single-process',
+                '--disable-extensions',
+                '--disable-plugins', 
+                '--disable-images',
+                '--disable-web-security',
+                '--memory-pressure-off'
+            ])
+        
         browser = await asyncio.wait_for(
             playwright.chromium.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+                args=browser_args
             ),
-            timeout=10.0  # 10 second timeout for browser launch
+            timeout=15.0  # Increased timeout for cloud
         )
         logger.info("✅ Binary: Browser launched successfully")
         context = await browser.new_context(user_agent="Mozilla/5.0")
