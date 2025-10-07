@@ -79,7 +79,7 @@ def price_comparison(request):
 
     ryans, binary = asyncio.run(gather_dynamic(product))
 
-    # run static scrapers with balanced timeout for cloud deployment
+    # run static scrapers with reliable timeout for all websites
     def run_static_scrapers(product):
         with ThreadPoolExecutor(max_workers=5) as executor:
             tasks = [
@@ -92,7 +92,7 @@ def price_comparison(request):
             results = []
             for task in tasks:
                 try:
-                    results.append(task.result(timeout=6))  # 6 second timeout per scraper (balanced)
+                    results.append(task.result(timeout=10))  # 10 second timeout per scraper (reliable)
                 except Exception as e:
                     logger.warning(f"Static scraper timeout/failed: {e}")
                     results.append({"products": [], "logo": "logo not found"})
@@ -111,11 +111,16 @@ def price_comparison(request):
         {"name": "PotakaIT", **potakait},
     ]
     
+    # Debug: Log all shop results before filtering
+    for shop in all_shops:
+        product_count = len(shop.get("products", []))
+        logger.info(f"Shop '{shop['name']}': {product_count} products")
+    
     # filter empty results 
     shops_with_results = [shop for shop in all_shops if shop.get("products")]
     
     # Cache the results: 10 min
     price_cache.set(product, shops_with_results, ttl=600)
-    logger.info(f"Cached results for '{product}' - Found {len(shops_with_results)} shops")
+    logger.info(f"Cached results for '{product}' - Found {len(shops_with_results)}/{len(all_shops)} shops with results")
     
     return Response(shops_with_results)

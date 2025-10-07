@@ -52,7 +52,7 @@ async def scrape_ryans(product, context):
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=4000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
         await asyncio.sleep(0.2)
 
@@ -85,7 +85,7 @@ async def scrape_ryans(product, context):
 def scrape_startech(product):
     try:
         url = f"https://www.startech.com.bd/product/search?search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=5)
+        response = session.get(url, timeout=8)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -180,7 +180,7 @@ def scrape_skyland(product):
     try:
         base_url = "https://www.skyland.com.bd/"
         url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=5)
+        response = session.get(url, timeout=8)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -241,7 +241,7 @@ def scrape_skyland(product):
 def scrape_pchouse(product):
     try:
         url = f"https://www.pchouse.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=5)
+        response = session.get(url, timeout=8)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -278,7 +278,7 @@ def scrape_pchouse(product):
 def scrape_ultratech(product):
     try:
         url = f"https://www.ultratech.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=5)
+        response = session.get(url, timeout=8)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -316,7 +316,7 @@ async def scrape_binary_playwright(product, context):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=4000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
         await asyncio.sleep(0.2)
 
@@ -348,7 +348,7 @@ async def scrape_binary_playwright(product, context):
 def scrape_potakait(product):
     try:
         url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = session.get(url, timeout=5)
+        response = session.get(url, timeout=8)
         soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
