@@ -36,6 +36,9 @@ logger = logging.getLogger("products.views")
 @api_view(['GET', 'HEAD', 'OPTIONS'])
 def price_comparison(request):
     
+    start_time = time.time()
+    logger.info(f"=== Request started ===")
+    
     # Handle CORS preflight requests
     if request.method == 'OPTIONS':
         return Response(status=200)
@@ -51,11 +54,15 @@ def price_comparison(request):
     # Check cache first
     cached_result = price_cache.get(product)
     if cached_result:
-        logger.info(f"Cache hit for '{product}'")
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"Cache hit for '{product}' - Total time: {total_time:.2f}ms")
         return Response(cached_result)
     
     # Clean up expired cache 
     price_cache.clear_expired()
+    
+    cache_check_time = time.time()
+    logger.info(f"Cache check completed: {(cache_check_time - start_time) * 1000:.2f}ms")
     
     async def gather_dynamic(product):
         async with async_playwright() as p:
@@ -72,7 +79,10 @@ def price_comparison(request):
             await browser.close()
             return ryans, binary
 
+    dynamic_start = time.time()
     ryans, binary = asyncio.run(gather_dynamic(product))
+    dynamic_end = time.time()
+    logger.info(f"Dynamic scrapers (Playwright) completed: {(dynamic_end - dynamic_start) * 1000:.2f}ms")
 
     # run static scrapers
     def run_static_scrapers(product):
@@ -86,7 +96,10 @@ def price_comparison(request):
             ]
             return [task.result() for task in tasks]
 
+    static_start = time.time()
     startech, skyland, pchouse, ultratech, potakait = run_static_scrapers(product)
+    static_end = time.time()
+    logger.info(f"Static scrapers completed: {(static_end - static_start) * 1000:.2f}ms")
     
     # combine scraper results
     all_shops = [
@@ -104,6 +117,11 @@ def price_comparison(request):
     
     # Cache the results: 5 min
     price_cache.set(product, shops_with_results, ttl=300)
-    logger.info(f"Cached results for '{product}' - Found {len(shops_with_results)} shops")
+    
+    total_time = (time.time() - start_time) * 1000
+    logger.info(f"=== REQUEST COMPLETED ===")
+    logger.info(f"Product: '{product}' - Found {len(shops_with_results)} shops")
+    logger.info(f"Total request time: {total_time:.2f}ms")
+    logger.info(f"=========================")
     
     return Response(shops_with_results)
