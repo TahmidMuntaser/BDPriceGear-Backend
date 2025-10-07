@@ -58,4 +58,4 @@ class SimpleCache:
         return len(expired_keys)
 
 # Global cache instance
-price_cache = SimpleCache(default_ttl=300)  # 5 min cache
+price_cache = SimpleCache(default_ttl=600)  # 10 min cache
