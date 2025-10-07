@@ -11,10 +11,17 @@ from .scraper import (
 import asyncio
 import logging
 import time
+import os
 from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("products.views")
+
+# Detect environment and set adaptive timeouts
+IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
+PLAYWRIGHT_TIMEOUT = 15000 if IS_CLOUD else 8000  # 15s on cloud, 8s locally
+HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally
+SCRAPER_TIMEOUT = 15 if IS_CLOUD else 8  # 15s on cloud, 8s locally
 
 @swagger_auto_schema(
     method='get',
@@ -110,8 +117,8 @@ def price_comparison(request):
                 results = []
                 for task in tasks:
                     try:
-                        # 8 second timeout per scraper
-                        result = task.result(timeout=8)
+                        # Adaptive timeout per scraper (15s cloud, 8s local)
+                        result = task.result(timeout=SCRAPER_TIMEOUT)
                         results.append(result)
                     except Exception as e:
                         logger.warning(f"Scraper failed: {e}")

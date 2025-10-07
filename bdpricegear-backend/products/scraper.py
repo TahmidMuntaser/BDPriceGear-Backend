@@ -3,6 +3,7 @@ import logging
 import re
 import uuid
 import urllib.parse
+import os
 
 from bs4 import BeautifulSoup
 import requests
@@ -11,6 +12,11 @@ from playwright.async_api import async_playwright
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
+
+# Detect environment and set adaptive timeouts
+IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
+PLAYWRIGHT_TIMEOUT = 15000 if IS_CLOUD else 8000  # 15s on cloud, 8s locally
+HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally
 
 
 
@@ -35,7 +41,7 @@ async def scrape_ryans(product, context):
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
         await asyncio.sleep(0.5)
 
@@ -74,7 +80,7 @@ def scrape_startech(product):
                           "Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        response = requests.get(url, headers=headers, timeout=8)
+        response = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -169,7 +175,7 @@ def scrape_skyland(product):
     try:
         base_url = "https://www.skyland.com.bd/"
         url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=8)
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -230,7 +236,7 @@ def scrape_skyland(product):
 def scrape_pchouse(product):
     try:
         url = f"https://www.pchouse.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=8)
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -267,7 +273,7 @@ def scrape_pchouse(product):
 def scrape_ultratech(product):
     try:
         url = f"https://www.ultratech.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=8)
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -305,7 +311,7 @@ async def scrape_binary_playwright(product, context):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
+        await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
         await asyncio.sleep(2)
 
@@ -337,7 +343,7 @@ async def scrape_binary_playwright(product, context):
 def scrape_potakait(product):
     try:
         url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=8)
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
         soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
