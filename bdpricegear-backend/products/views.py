@@ -66,40 +66,79 @@ def price_comparison(request):
     
     async def gather_dynamic(product):
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent="Mozilla/5.0")
+            # Optimize browser for cloud resources
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--memory-pressure-off'
+                ]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0",
+                viewport={'width': 800, 'height': 600}  # Smaller viewport for performance
+            )
 
             tasks = [
                 scrape_ryans(product, context),
                 scrape_binary_playwright(product, context) 
             ]
-            results = await asyncio.gather(*tasks)
-            ryans, binary = results
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Handle exceptions gracefully
+            ryans = results[0] if not isinstance(results[0], Exception) else {"products": [], "logo": ""}
+            binary = results[1] if not isinstance(results[1], Exception) else {"products": [], "logo": ""}
 
             await browser.close()
             return ryans, binary
 
-    dynamic_start = time.time()
-    ryans, binary = asyncio.run(gather_dynamic(product))
-    dynamic_end = time.time()
-    logger.info(f"Dynamic scrapers (Playwright) completed: {(dynamic_end - dynamic_start) * 1000:.2f}ms")
+    # run static scrapers with timeout and resource optimization
+    async def run_static_scrapers_async(product):
+        def run_static_scrapers(product):
+            with ThreadPoolExecutor(max_workers=3) as executor:  # Reduced workers for cloud
+                tasks = [
+                    executor.submit(scrape_startech, product),
+                    executor.submit(scrape_skyland, product),
+                    executor.submit(scrape_pchouse, product),
+                    executor.submit(scrape_ultratech, product),
+                    executor.submit(scrape_potakait, product),
+                ]
+                results = []
+                for task in tasks:
+                    try:
+                        # 8 second timeout per scraper
+                        result = task.result(timeout=8)
+                        results.append(result)
+                    except Exception as e:
+                        logger.warning(f"Scraper failed: {e}")
+                        results.append({"products": [], "logo": ""})
+                return results
+        
+        # Run static scrapers in executor to make them async
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, run_static_scrapers, product)
 
-    # run static scrapers
-    def run_static_scrapers(product):
-        with ThreadPoolExecutor() as executor:
-            tasks = [
-                executor.submit(scrape_startech, product),
-                executor.submit(scrape_skyland, product),
-                executor.submit(scrape_pchouse, product),
-                executor.submit(scrape_ultratech, product),
-                executor.submit(scrape_potakait, product),
-            ]
-            return [task.result() for task in tasks]
-
-    static_start = time.time()
-    startech, skyland, pchouse, ultratech, potakait = run_static_scrapers(product)
-    static_end = time.time()
-    logger.info(f"Static scrapers completed: {(static_end - static_start) * 1000:.2f}ms")
+    # Run both dynamic and static scrapers in parallel
+    async def run_all_scrapers():
+        parallel_start = time.time()
+        dynamic_task = gather_dynamic(product)
+        static_task = run_static_scrapers_async(product)
+        
+        # Wait for both to complete simultaneously
+        (ryans, binary), static_results = await asyncio.gather(dynamic_task, static_task)
+        startech, skyland, pchouse, ultratech, potakait = static_results
+        
+        parallel_end = time.time()
+        logger.info(f"All scrapers completed in parallel: {(parallel_end - parallel_start) * 1000:.2f}ms")
+        
+        return ryans, binary, startech, skyland, pchouse, ultratech, potakait
+    
+    # Execute all scrapers in parallel
+    ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(run_all_scrapers())
     
     # combine scraper results
     all_shops = [
