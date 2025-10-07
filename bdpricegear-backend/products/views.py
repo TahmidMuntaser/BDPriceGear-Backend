@@ -7,7 +7,6 @@ from .scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
 )
-from .browser_pool import browser_pool
 
 import asyncio
 import logging
@@ -22,7 +21,7 @@ logger = logging.getLogger("products.views")
 IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
 PLAYWRIGHT_TIMEOUT = 15000 if IS_CLOUD else 8000  # 15s on cloud, 8s locally
 HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally  
-SCRAPER_TIMEOUT = 15 if IS_CLOUD else 8  # 15s on cloud, 8s locally
+SCRAPER_TIMEOUT = 30 if IS_CLOUD else 15  # 30s on cloud (for individual browsers), 15s locally
 
 # Debug logging
 logger.info(f"Environment: {'CLOUD' if IS_CLOUD else 'LOCAL'} | Playwright: {PLAYWRIGHT_TIMEOUT}ms | HTTP: {HTTP_TIMEOUT}s | Scraper: {SCRAPER_TIMEOUT}s")
@@ -76,9 +75,7 @@ def price_comparison(request):
     logger.info(f"Cache check completed: {(cache_check_time - start_time) * 1000:.2f}ms")
     
     async def gather_dynamic(product):
-        # Initialize browser pool once (reused across requests)
-        await browser_pool.initialize()
-        
+        # Each scraper now uses individual browser instances for reliability
         tasks = [
             scrape_ryans(product),
             scrape_binary_playwright(product)
@@ -148,7 +145,7 @@ def price_comparison(request):
     
     # Execute all scrapers in parallel with optimized browser pool
     try:
-        logger.info("🚀 Using optimized parallel execution with browser pooling")
+        logger.info("🚀 Using optimized parallel execution with individual browsers")
         ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(run_all_scrapers())
     except Exception as e:
         logger.error(f"Scraper execution failed: {e}")

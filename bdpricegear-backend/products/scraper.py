@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 import requests
 
 from playwright.async_api import async_playwright
-from .browser_pool import browser_pool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
@@ -39,10 +38,23 @@ def normalize_price(text):
 # ryans 
 async def scrape_ryans(product):
     results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
-    context = None
+    browser = None
+    playwright = None
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
-        context = await browser_pool.get_context()
+        logger.info("🚀 Ryans: Starting browser...")
+        
+        # Create individual browser instance for reliability
+        playwright = await async_playwright().start()
+        browser = await asyncio.wait_for(
+            playwright.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            ),
+            timeout=10.0  # 10 second timeout for browser launch
+        )
+        logger.info("✅ Ryans: Browser launched successfully")
+        context = await browser.new_context(user_agent="Mozilla/5.0")
         page = await context.new_page()
         await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
@@ -65,11 +77,23 @@ async def scrape_ryans(product):
             })
 
         await page.close()
+        await context.close()
+        await browser.close()
+        await playwright.stop()
+        logger.info("✅ Ryans: Completed successfully")
     except Exception as e:
-        logger.error(f"Ryans error: {e}")
+        logger.error(f"❌ Ryans error: {e}")
     finally:
-        if context:
-            await browser_pool.return_context(context)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+        if playwright:
+            try:
+                await playwright.stop()
+            except:
+                pass
     return results
 
 
@@ -85,7 +109,10 @@ def scrape_startech(product):
                           "Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        response = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
+        # Startech is also timing out, use extended timeout
+        startech_timeout = 20 if IS_CLOUD else HTTP_TIMEOUT
+        logger.info(f"Startech using timeout: {startech_timeout}s")
+        response = requests.get(url, headers=headers, timeout=startech_timeout)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -313,10 +340,23 @@ def scrape_ultratech(product):
  # scraper.py
 async def scrape_binary_playwright(product):
     results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
-    context = None
+    browser = None
+    playwright = None
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
-        context = await browser_pool.get_context()
+        logger.info("🚀 Binary: Starting browser...")
+        
+        # Create individual browser instance for reliability
+        playwright = await async_playwright().start()
+        browser = await asyncio.wait_for(
+            playwright.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            ),
+            timeout=10.0  # 10 second timeout for browser launch
+        )
+        logger.info("✅ Binary: Browser launched successfully")
+        context = await browser.new_context(user_agent="Mozilla/5.0")
         page = await context.new_page()
         await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
@@ -340,11 +380,23 @@ async def scrape_binary_playwright(product):
             })
 
         await page.close()
+        await context.close()
+        await browser.close()
+        await playwright.stop()
+        logger.info("✅ Binary: Completed successfully")
     except Exception as e:
-        logger.error(f"Binary Playwright error: {e}")
+        logger.error(f"❌ Binary error: {e}")
     finally:
-        if context:
-            await browser_pool.return_context(context)
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+        if playwright:
+            try:
+                await playwright.stop()
+            except:
+                pass
     return results
 
     
