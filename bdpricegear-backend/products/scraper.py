@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import requests
 
 from playwright.async_api import async_playwright
+from .browser_pool import browser_pool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
@@ -36,10 +37,12 @@ def normalize_price(text):
 #dynamic scrapper
 
 # ryans 
-async def scrape_ryans(product, context):
+async def scrape_ryans(product):
     results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
+    context = None
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
+        context = await browser_pool.get_context()
         page = await context.new_page()
         await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
@@ -62,10 +65,12 @@ async def scrape_ryans(product, context):
             })
 
         await page.close()
-        return results
     except Exception as e:
         logger.error(f"Ryans error: {e}")
-        return results
+    finally:
+        if context:
+            await browser_pool.return_context(context)
+    return results
 
 
 #static scrapper
@@ -306,10 +311,12 @@ def scrape_ultratech(product):
         return {"products": [], "logo": "logo not found"}
     
  # scraper.py
-async def scrape_binary_playwright(product, context):
+async def scrape_binary_playwright(product):
     results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+    context = None
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
+        context = await browser_pool.get_context()
         page = await context.new_page()
         await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
@@ -333,10 +340,12 @@ async def scrape_binary_playwright(product, context):
             })
 
         await page.close()
-        return results
     except Exception as e:
         logger.error(f"Binary Playwright error: {e}")
-        return results
+    finally:
+        if context:
+            await browser_pool.return_context(context)
+    return results
 
     
 # potakaIT 

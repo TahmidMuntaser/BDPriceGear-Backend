@@ -7,6 +7,7 @@ from .scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
 )
+from .browser_pool import browser_pool
 
 import asyncio
 import logging
@@ -20,8 +21,11 @@ logger = logging.getLogger("products.views")
 # Detect environment and set adaptive timeouts
 IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
 PLAYWRIGHT_TIMEOUT = 15000 if IS_CLOUD else 8000  # 15s on cloud, 8s locally
-HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally
+HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally  
 SCRAPER_TIMEOUT = 15 if IS_CLOUD else 8  # 15s on cloud, 8s locally
+
+# Debug logging
+logger.info(f"Environment: {'CLOUD' if IS_CLOUD else 'LOCAL'} | Playwright: {PLAYWRIGHT_TIMEOUT}ms | HTTP: {HTTP_TIMEOUT}s | Scraper: {SCRAPER_TIMEOUT}s")
 
 @swagger_auto_schema(
     method='get',
@@ -72,38 +76,20 @@ def price_comparison(request):
     logger.info(f"Cache check completed: {(cache_check_time - start_time) * 1000:.2f}ms")
     
     async def gather_dynamic(product):
-        async with async_playwright() as p:
-            # Optimize browser for cloud resources
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-web-security',
-                    '--disable-features=VizDisplayCompositor',
-                    '--memory-pressure-off'
-                ]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0",
-                viewport={'width': 800, 'height': 600}  # Smaller viewport for performance
-            )
+        # Initialize browser pool once (reused across requests)
+        await browser_pool.initialize()
+        
+        tasks = [
+            scrape_ryans(product),
+            scrape_binary_playwright(product)
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            tasks = [
-                scrape_ryans(product, context),
-                scrape_binary_playwright(product, context) 
-            ]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Handle exceptions gracefully
-            ryans = results[0] if not isinstance(results[0], Exception) else {"products": [], "logo": ""}
-            binary = results[1] if not isinstance(results[1], Exception) else {"products": [], "logo": ""}
+        # Handle exceptions gracefully  
+        ryans = results[0] if not isinstance(results[0], Exception) else {"products": [], "logo": ""}
+        binary = results[1] if not isinstance(results[1], Exception) else {"products": [], "logo": ""}
 
-            await browser.close()
-            return ryans, binary
-
-    # run static scrapers with timeout and resource optimization
+        return ryans, binary    # run static scrapers with timeout and resource optimization
     async def run_static_scrapers_async(product):
         def run_static_scrapers(product):
             with ThreadPoolExecutor(max_workers=3) as executor:  # Reduced workers for cloud
@@ -115,13 +101,15 @@ def price_comparison(request):
                     executor.submit(scrape_potakait, product),
                 ]
                 results = []
-                for task in tasks:
+                scraper_names = ['startech', 'skyland', 'pchouse', 'ultratech', 'potakait']
+                for i, task in enumerate(tasks):
                     try:
                         # Adaptive timeout per scraper (15s cloud, 8s local)
                         result = task.result(timeout=SCRAPER_TIMEOUT)
                         results.append(result)
+                        logger.info(f"✅ {scraper_names[i]} scraper completed successfully")
                     except Exception as e:
-                        logger.warning(f"Scraper failed: {e}")
+                        logger.warning(f"❌ {scraper_names[i]} scraper failed: {type(e).__name__}: {e}")
                         results.append({"products": [], "logo": ""})
                 return results
         
@@ -132,11 +120,25 @@ def price_comparison(request):
     # Run both dynamic and static scrapers in parallel
     async def run_all_scrapers():
         parallel_start = time.time()
+        
+        # Start both tasks
+        dynamic_start = time.time()
         dynamic_task = gather_dynamic(product)
+        static_start = time.time()
         static_task = run_static_scrapers_async(product)
         
         # Wait for both to complete simultaneously
-        (ryans, binary), static_results = await asyncio.gather(dynamic_task, static_task)
+        (ryans, binary), static_results = await asyncio.gather(dynamic_task, static_task, return_exceptions=True)
+        
+        # Handle exceptions
+        if isinstance((ryans, binary), Exception):
+            logger.error(f"Dynamic scrapers failed: {ryans, binary}")
+            ryans, binary = {"products": [], "logo": ""}, {"products": [], "logo": ""}
+        
+        if isinstance(static_results, Exception):
+            logger.error(f"Static scrapers failed: {static_results}")
+            static_results = [{"products": [], "logo": ""} for _ in range(5)]
+            
         startech, skyland, pchouse, ultratech, potakait = static_results
         
         parallel_end = time.time()
@@ -144,8 +146,14 @@ def price_comparison(request):
         
         return ryans, binary, startech, skyland, pchouse, ultratech, potakait
     
-    # Execute all scrapers in parallel
-    ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(run_all_scrapers())
+    # Execute all scrapers in parallel with optimized browser pool
+    try:
+        logger.info("🚀 Using optimized parallel execution with browser pooling")
+        ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(run_all_scrapers())
+    except Exception as e:
+        logger.error(f"Scraper execution failed: {e}")
+        # Return empty results as fallback
+        ryans = binary = startech = skyland = pchouse = ultratech = potakait = {"products": [], "logo": ""}
     
     # combine scraper results
     all_shops = [
