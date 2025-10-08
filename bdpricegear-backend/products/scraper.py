@@ -3,7 +3,6 @@ import logging
 import re
 import uuid
 import urllib.parse
-import os
 
 from bs4 import BeautifulSoup
 import requests
@@ -12,13 +11,6 @@ from playwright.async_api import async_playwright
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
-
-# Detect environment and set adaptive timeouts
-IS_CLOUD = os.environ.get('RENDER') or os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('HEROKU_APP_NAME')
-PLAYWRIGHT_TIMEOUT = 25000 if IS_CLOUD else 8000  # 25s on cloud, 8s locally
-HTTP_TIMEOUT = 12 if IS_CLOUD else 8  # 12s on cloud, 8s locally
-
-
 
 # extracts and cleans price values
 def normalize_price(text):
@@ -36,40 +28,12 @@ def normalize_price(text):
 #dynamic scrapper
 
 # ryans 
-async def scrape_ryans(product):
+async def scrape_ryans(product, context):
     results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
-    browser = None
-    playwright = None
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
-        logger.info("🚀 Ryans: Starting browser...")
-        
-        # Create individual browser instance for reliability
-        playwright = await async_playwright().start()
-        
-        # Cloud-optimized browser args
-        browser_args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-        if IS_CLOUD:
-            browser_args.extend([
-                '--single-process',
-                '--disable-extensions',
-                '--disable-plugins', 
-                '--disable-images',
-                '--disable-web-security',
-                '--memory-pressure-off'
-            ])
-        
-        browser = await asyncio.wait_for(
-            playwright.chromium.launch(
-                headless=True,
-                args=browser_args
-            ),
-            timeout=15.0  # Increased timeout for cloud
-        )
-        logger.info("✅ Ryans: Browser launched successfully")
-        context = await browser.new_context(user_agent="Mozilla/5.0")
         page = await context.new_page()
-        await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
         await asyncio.sleep(0.5)
 
@@ -90,24 +54,10 @@ async def scrape_ryans(product):
             })
 
         await page.close()
-        await context.close()
-        await browser.close()
-        await playwright.stop()
-        logger.info("✅ Ryans: Completed successfully")
+        return results
     except Exception as e:
-        logger.error(f"❌ Ryans error: {e}")
-    finally:
-        if browser:
-            try:
-                await browser.close()
-            except:
-                pass
-        if playwright:
-            try:
-                await playwright.stop()
-            except:
-                pass
-    return results
+        logger.error(f"Ryans error: {e}")
+        return results
 
 
 #static scrapper
@@ -122,10 +72,7 @@ def scrape_startech(product):
                           "Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        # Startech is also timing out, use extended timeout
-        startech_timeout = 20 if IS_CLOUD else HTTP_TIMEOUT
-        logger.info(f"Startech using timeout: {startech_timeout}s")
-        response = requests.get(url, headers=headers, timeout=startech_timeout)
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
@@ -151,76 +98,13 @@ def scrape_startech(product):
         logger.error(f"StarTech error: {e}")
         return {"products": [], "logo": "logo not found"}
 
-
-# techland 
-# def scrape_techland(product):
-#     try:
-#         url = f"https://www.techlandbd.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        
-#         headers = {
-#             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-#             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-#         }
-        
-#         response = requests.get(url, headers=headers, timeout=15)
-#         soup = BeautifulSoup(response.text, "html.parser")
-#         products = []
-        
-#         logo = soup.select_one("a.navbar-brand img")
-#         logo_url = logo["src"] if logo and "src" in logo.attrs else "https://via.placeholder.com/150"
-        
-#         product_items = soup.select('div.flex.overflow-hidden.transition-all')
-        
-#         if not product_items:
-#             logger.warning(f"No products found on Techland for: {product}")
-#             return {"products": [], "logo": logo_url}
-        
-#         for item in product_items:
-#             try:
-             
-#                 name_elem = item.select_one('h3.text-xs a') or item.select_one('h3.text-sm a')
-#                 price_container = item.select_one('.price-tag')
-#                 img_elem = item.select_one('div.relative img')
-#                 link_elem = name_elem  
-                
-#                 price_text = ""
-#                 if price_container:
-
-#                     texts = [text.strip() for text in price_container.find_all(text=True, recursive=True) if text.strip()]
-#                     if texts:
-                        
-#                         price_text = texts[0]
-                
-#                 if not name_elem or not price_text:
-#                     continue
-                    
-#                 products.append({
-#                     "id": str(uuid.uuid4()),
-#                     "name": name_elem.text.strip(),
-#                     "price": normalize_price(price_text),
-#                     "img": img_elem.get("src", "") if img_elem else "",
-#                     "link": link_elem.get("href", "")
-#                 })
-                
-#             except Exception as e:
-#                 logger.warning(f"Techland product parse error: {e}")
-#                 continue
-                
-#         return {"products": products, "logo": logo_url}
-    
-#     except requests.exceptions.RequestException as e:
-#         logger.error(f"Techland network error: {e}")
-#     except Exception as e:
-#         logger.error(f"Techland general error: {e}", exc_info=True)
-        
-#     return {"products": [], "logo": "https://via.placeholder.com/150"}
     
 # skyland     
 def scrape_skyland(product):
     try:
         base_url = "https://www.skyland.com.bd/"
         url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -281,7 +165,7 @@ def scrape_skyland(product):
 def scrape_pchouse(product):
     try:
         url = f"https://www.pchouse.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -318,7 +202,7 @@ def scrape_pchouse(product):
 def scrape_ultratech(product):
     try:
         url = f"https://www.ultratech.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response = requests.get(url, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
@@ -349,44 +233,17 @@ def scrape_ultratech(product):
         
         logger.error(f"UltraTech error: {e}")
         return {"products": [], "logo": "logo not found"}
-    
- # scraper.py
-async def scrape_binary_playwright(product):
+
+
+# binary playwright
+async def scrape_binary_playwright(product, context):
     results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
-    browser = None
-    playwright = None
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
-        logger.info("🚀 Binary: Starting browser...")
-        
-        # Create individual browser instance for reliability
-        playwright = await async_playwright().start()
-        
-        # Cloud-optimized browser args
-        browser_args = ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-        if IS_CLOUD:
-            browser_args.extend([
-                '--single-process',
-                '--disable-extensions',
-                '--disable-plugins', 
-                '--disable-images',
-                '--disable-web-security',
-                '--memory-pressure-off'
-            ])
-        
-        browser = await asyncio.wait_for(
-            playwright.chromium.launch(
-                headless=True,
-                args=browser_args
-            ),
-            timeout=15.0  # Increased timeout for cloud
-        )
-        logger.info("✅ Binary: Browser launched successfully")
-        context = await browser.new_context(user_agent="Mozilla/5.0")
         page = await context.new_page()
-        await page.goto(url, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
 
@@ -406,31 +263,17 @@ async def scrape_binary_playwright(product):
             })
 
         await page.close()
-        await context.close()
-        await browser.close()
-        await playwright.stop()
-        logger.info("✅ Binary: Completed successfully")
+        return results
     except Exception as e:
-        logger.error(f"❌ Binary error: {e}")
-    finally:
-        if browser:
-            try:
-                await browser.close()
-            except:
-                pass
-        if playwright:
-            try:
-                await playwright.stop()
-            except:
-                pass
-    return results
+        logger.error(f"Binary Playwright error: {e}")
+        return results
 
     
 # potakaIT 
 def scrape_potakait(product):
     try:
         url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response = requests.get(url, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
