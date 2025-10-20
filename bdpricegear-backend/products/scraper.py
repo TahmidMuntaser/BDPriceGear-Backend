@@ -164,31 +164,47 @@ def scrape_skyland(product):
 # pchouse 
 def scrape_pchouse(product):
     try:
-        url = f"https://www.pchouse.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=10)
+        url = f"https://www.pchouse.com.bd/product/search?search={urllib.parse.quote(product)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
         soap = BeautifulSoup(response.text, "html.parser")
         
         products = []
         
-        logo = soap.select_one("#logo img")
+        # Get logo
+        logo = soap.select_one(".logo img")
         if logo:
-            logo_url = logo["src"]
+            logo_url = logo.get("src", "https://www.pchouse.com.bd/image/catalog/unnamed.png")
         else:
-            logo_url = "logo not found"
+            logo_url = "https://www.pchouse.com.bd/image/catalog/unnamed.png"
             
-        for item in soap.select(".product-layout"):
-            name = item.select_one(".name")
-            price = item.select_one(".price-new")
-            img = item.select_one(".product-img img")
-            link = item.select_one(".product-img")
+        # Correct selector for PCHouse products
+        product_items = soap.select(".single-product-item")
+        
+        for item in product_items:
+            # Name 
+            name_elem = item.select_one("h4 a")
             
-            products.append({
+            # Price 
+            price_elem = item.select_one(".special-price") or item.select_one(".regular-price")
+            
+            # Image
+            img_elem = item.select_one("img")
+            
+            # Link is the
+            link_elem = item.select_one("h4 a")
+            
+            if name_elem:  
+                products.append({
                     "id": str(uuid.uuid4()),
-                    "name": name.text.strip() if name else "Name not found",
-                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                    "img": img["src"] if img else "Image not found",
-                    "link": link["href"] if link else "Link not found"
-            })
+                    "name": name_elem.text.strip() if name_elem else "Name not found",
+                    "price": normalize_price(price_elem.text.strip()) if price_elem else "Out Of Stock",
+                    "img": img_elem.get("src", "Image not found") if img_elem else "Image not found",
+                    "link": link_elem.get("href", "Link not found") if link_elem else "Link not found"
+                })
             
         return {"products": products, "logo": logo_url}
     
