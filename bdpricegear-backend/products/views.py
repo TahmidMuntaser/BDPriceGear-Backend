@@ -66,7 +66,7 @@ def price_comparison(request):
 
                 tasks = [
                     scrape_ryans(product, context),
-                    scrape_binary_playwright(product, context) 
+                    # scrape_binary_playwright(product, context) 
                 ]
                 results = await asyncio.gather(*tasks)
                 await browser.close()
@@ -92,12 +92,13 @@ def price_comparison(request):
         # Wait for both to complete
         dynamic_results, static_results = await asyncio.gather(dynamic_task, static_task)
         
-        ryans, binary = dynamic_results
+        # ryans, binary = dynamic_results
+        [ryans] = dynamic_results
         startech, skyland, pchouse, ultratech, potakait = static_results
         
-        return ryans, binary, startech, skyland, pchouse, ultratech, potakait
+        return ryans, startech, skyland, pchouse, ultratech, potakait
 
-    ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(gather_all_scrapers(product))
+    ryans, startech, skyland, pchouse, ultratech, potakait = asyncio.run(gather_all_scrapers(product))
     
     # combine scraper results
     all_shops = [
@@ -106,7 +107,7 @@ def price_comparison(request):
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
-        {"name": "Binary", **binary},
+        # {"name": "Binary", **binary},
         {"name": "PotakaIT", **potakait},
     ]
     
