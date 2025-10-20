@@ -69,12 +69,13 @@ def price_comparison(request):
                     # scrape_binary_playwright(product, context) 
                 ]
                 results = await asyncio.gather(*tasks)
+                await context.close()
                 await browser.close()
                 return results
 
         # Static scrapers in thread pool
         def run_static():
-            with ThreadPoolExecutor() as executor:
+            with ThreadPoolExecutor(max_workers=3) as executor:
                 tasks = [
                     executor.submit(scrape_startech, product),
                     executor.submit(scrape_skyland, product),
