@@ -69,7 +69,6 @@ def price_comparison(request):
                     # scrape_binary_playwright(product, context) 
                 ]
                 results = await asyncio.gather(*tasks)
-                await context.close()
                 await browser.close()
                 return results
 

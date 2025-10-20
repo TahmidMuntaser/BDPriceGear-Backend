@@ -33,9 +33,9 @@ async def scrape_ryans(product, context):
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
-        # await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        # await asyncio.sleep(0.5)
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
+        await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+        await asyncio.sleep(0.5)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
         for item in soup.select(".category-single-product"):
@@ -229,7 +229,6 @@ def scrape_ultratech(product):
             
         return {"products": products, "logo": logo_url}
     
-    
     except Exception as e:
         
         logger.error(f"UltraTech error: {e}")
@@ -242,9 +241,9 @@ async def scrape_binary_playwright(product, context):
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=8000, wait_until="domcontentloaded")
-        # await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        # await asyncio.sleep(1)
+        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
+        await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+        await asyncio.sleep(1)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
 
