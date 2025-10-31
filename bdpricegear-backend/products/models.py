@@ -75,17 +75,11 @@ class Product(models.Model):
     
     # Pricing
     current_price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    original_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    discount_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, default='BDT')
     
     # Stock & Availability
     stock_status = models.CharField(max_length=20, choices=STOCK_STATUS, default='in_stock')
     is_available = models.BooleanField(default=True)
-    
-    # Metadata
-    brand = models.CharField(max_length=100, blank=True, null=True, db_index=True)
-    specifications = models.JSONField(blank=True, null=True, help_text="Product specs as JSON")
     
     # Tracking
     views_count = models.IntegerField(default=0)
@@ -110,10 +104,6 @@ class Product(models.Model):
         # Auto-generate slug
         if not self.slug:
             self.slug = slugify(self.name)[:500]
-        
-        # Calculate discount percentage
-        if self.original_price and self.current_price and self.original_price > self.current_price:
-            self.discount_percentage = ((self.original_price - self.current_price) / self.original_price) * 100
         
         # Update stock status based on price
         if isinstance(self.current_price, str) or self.current_price == 0:

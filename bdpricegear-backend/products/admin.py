@@ -31,8 +31,8 @@ class ShopAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'shop', 'category', 'current_price', 'stock_status', 'is_available', 'last_scraped']
     list_filter = ['shop', 'category', 'stock_status', 'is_available', 'created_at']
-    search_fields = ['name', 'brand', 'sku']
-    readonly_fields = ['slug', 'discount_percentage', 'views_count', 'last_scraped', 'created_at', 'updated_at']
+    search_fields = ['name', 'sku']
+    readonly_fields = ['slug', 'views_count', 'last_scraped', 'created_at', 'updated_at']
     list_per_page = 50
     
     fieldsets = (
@@ -40,10 +40,10 @@ class ProductAdmin(admin.ModelAdmin):
             'fields': ('name', 'slug', 'sku', 'category', 'shop')
         }),
         ('Product Details', {
-            'fields': ('description', 'brand', 'image_url', 'product_url', 'specifications')
+            'fields': ('description', 'image_url', 'product_url')
         }),
         ('Pricing', {
-            'fields': ('current_price', 'original_price', 'discount_percentage', 'currency')
+            'fields': ('current_price', 'currency')
         }),
         ('Availability', {
             'fields': ('stock_status', 'is_available')
