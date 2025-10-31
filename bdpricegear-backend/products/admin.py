@@ -31,13 +31,13 @@ class ShopAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     list_display = ['name', 'shop', 'category', 'current_price', 'stock_status', 'is_available', 'last_scraped']
     list_filter = ['shop', 'category', 'stock_status', 'is_available', 'created_at']
-    search_fields = ['name', 'sku']
+    search_fields = ['name']
     readonly_fields = ['slug', 'views_count', 'last_scraped', 'created_at', 'updated_at']
     list_per_page = 50
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('name', 'slug', 'sku', 'category', 'shop')
+            'fields': ('name', 'slug', 'category', 'shop')
         }),
         ('Product Details', {
             'fields': ('description', 'image_url', 'product_url')

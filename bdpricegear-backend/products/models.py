@@ -62,7 +62,6 @@ class Product(models.Model):
     # Product Identification
     name = models.CharField(max_length=500, db_index=True)
     slug = models.SlugField(max_length=500, blank=True, null=True)
-    sku = models.CharField(max_length=100, blank=True, null=True, help_text="Shop SKU/Product Code")
     
     # Categorization
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
