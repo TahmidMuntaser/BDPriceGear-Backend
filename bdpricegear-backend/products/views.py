@@ -1,12 +1,23 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from rest_framework import viewsets, filters
+from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
+from django_filters.rest_framework import DjangoFilterBackend
+from django.utils import timezone
+
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
 )
+from .models import Product, Category, Shop
+from .serializers import (
+    ProductListSerializer, ProductDetailSerializer,
+    CategorySerializer, ShopSerializer
+)
+from .filters import ProductFilter
 
 import asyncio
 import logging
@@ -118,3 +129,82 @@ def price_comparison(request):
     logger.info(f"Cached results for '{product}' - Found {len(shops_with_results)} shops")
     
     return Response(shops_with_results)
+
+
+# ========================================
+# PRODUCT CATALOG API VIEWS
+# ========================================
+
+class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+    
+    # API endpoint for browsing product catalog.
+    
+    # List: GET /api/products/
+    # Detail: GET /api/products/{id}/
+    
+    # Filters:
+    # - ?category=laptop
+    # - ?shop=startech
+    # - ?min_price=10000&max_price=50000
+    # - ?search=gaming
+    # - ?brand=asus
+    # - ?in_stock=true
+    # - ?on_sale=true
+    
+    queryset = Product.objects.filter(is_available=True).select_related('category', 'shop')
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = ProductFilter
+    search_fields = ['name', 'brand', 'description']
+    ordering_fields = ['current_price', 'created_at', 'discount_percentage', 'name']
+    ordering = ['-created_at']
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return ProductDetailSerializer
+        return ProductListSerializer
+    
+    def retrieve(self, request, *args, **kwargs):
+        # Get single product and increment view count
+        instance = self.get_object()
+        instance.views_count += 1
+        instance.save(update_fields=['views_count'])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+
+class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    # 
+    # API endpoint for product categories.
+    
+    # List: GET /api/categories/
+    # Detail: GET /api/categories/{id}/
+    # 
+    queryset = Category.objects.filter(is_active=True)
+    serializer_class = CategorySerializer
+    lookup_field = 'slug'
+
+
+class ShopViewSet(viewsets.ReadOnlyModelViewSet):
+    
+    # API endpoint for shops.
+    
+    # List: GET /api/shops/
+    # Detail: GET /api/shops/{id}/
+    
+    queryset = Shop.objects.filter(is_active=True)
+    serializer_class = ShopSerializer
+    lookup_field = 'slug'
+
+
+@api_view(['GET'])
+def health_check(request):
+   
+    # Health check endpoint for UptimeRobot monitoring.
+    # Also prevents Render from sleeping.
+    
+    return Response({
+        "status": "ok",
+        "timestamp": timezone.now().isoformat(),
+        "service": "BDPriceGear Backend",
+        "database": "connected"
+    })

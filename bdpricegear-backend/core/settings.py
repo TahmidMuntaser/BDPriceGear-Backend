@@ -235,14 +235,18 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max per task
 
 # Celery Beat Schedule (Hourly Scraping)
-from celery.schedules import crontab
+try:
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        'scrape-all-shops-hourly': {
+            'task': 'products.tasks.scrape_all_shops',
+            'schedule': crontab(minute=0, hour='*/1'),  # Every hour at minute 0
+        },
+    }
+except ImportError:
+    # Celery not installed (local development without Celery)
+    CELERY_BEAT_SCHEDULE = {}
 
-CELERY_BEAT_SCHEDULE = {
-    'scrape-all-shops-hourly': {
-        'task': 'products.tasks.scrape_all_shops',
-        'schedule': crontab(minute=0, hour='*/1'),  # Every hour at minute 0
-    },
-}
 
 
 # ========================================
