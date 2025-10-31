@@ -2,8 +2,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .cache_manager import price_cache
-from .scraper import (
+from .utils.cache_manager import price_cache
+from .utils.scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
 )
