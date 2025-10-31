@@ -4,7 +4,7 @@ from .models import Category, Shop, Product, PriceHistory
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'slug', 'icon', 'is_active', 'product_count', 'created_at']
+    list_display = ['name', 'slug', 'is_active', 'product_count', 'created_at']
     list_filter = ['is_active', 'created_at']
     search_fields = ['name', 'description']
     prepopulated_fields = {'slug': ('name',)}

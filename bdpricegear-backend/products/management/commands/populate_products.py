@@ -29,7 +29,7 @@ class Command(BaseCommand):
             '--search',
             nargs='+',
             type=str,
-            default=['laptop', 'mouse', 'keyboard', 'monitor'],
+            default=['laptop', 'mouse', 'keyboard', 'monitor', 'webcam', 'Microphone', 'speaker', 'headphone', 'ram', 'ssd', 'hdd'],
             help='Search terms to scrape (default: laptop, mouse, keyboard, monitor)'
         )
         parser.add_argument(
@@ -78,20 +78,23 @@ class Command(BaseCommand):
         """Create categories from search terms"""
         count = 0
         categories = [
-            {'name': 'Laptop', 'icon': '💻'},
-            {'name': 'Mouse', 'icon': '🖱️'},
-            {'name': 'Keyboard', 'icon': '⌨️'},
-            {'name': 'Monitor', 'icon': '🖥️'},
-            {'name': 'Headphone', 'icon': '🎧'},
-            {'name': 'Speaker', 'icon': '🔊'},
-            {'name': 'Webcam', 'icon': '📷'},
-            {'name': 'Microphone', 'icon': '🎤'},
+            'Laptop',
+            'Mouse',
+            'Keyboard',
+            'Monitor',
+            'Headphone',
+            'Speaker',
+            'Webcam',
+            'Microphone',
+            'RAM',
+            'SSD',
+            'HDD',
         ]
         
-        for cat_data in categories:
-            _, created = Category.objects.get_or_create(
-                name=cat_data['name'],
-                defaults={'icon': cat_data['icon'], 'is_active': True}
+        for cat_name in categories:
+            _, created = Category.objects.update_or_create(
+                name=cat_name,
+                defaults={'is_active': True}
             )
             if created:
                 count += 1
