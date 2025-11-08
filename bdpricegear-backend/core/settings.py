@@ -225,8 +225,31 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CELERY CONFIGURATION
 # ========================================
 
-CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+# Get Redis URL from environment
+redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+# For Upstash Redis, ensure we use rediss:// (with SSL) if the URL doesn't already have it
+if redis_url and redis_url.startswith('redis://default:') and '@inviting-pangolin' in redis_url:
+    # This is Upstash, convert to SSL
+    redis_url = redis_url.replace('redis://', 'rediss://')
+
+CELERY_BROKER_URL = redis_url
+CELERY_RESULT_BACKEND = redis_url
+
+# Celery connection pool settings for better stability
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_POOL_LIMIT = 0  # Unlimited connections
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'socket_connect_timeout': 5,
+    'socket_keepalive': True,
+    'socket_keepalive_options': {
+        1: 1,
+        2: 3,
+        3: 3,
+    }
+}
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
