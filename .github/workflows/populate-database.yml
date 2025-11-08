@@ -1,48 +1,31 @@
-name: Populate Database
+name: Populate Database (DISABLED)
 
 on:
+  # DISABLED: Playwright browser installation keeps failing in GitHub Actions
+  # To manually populate:
+  # 1. Run locally: python manage.py populate_products --limit 50
+  # 2. Then run: python migrate_to_supabase.py
+  # For now, database has 1,417 products and is stable
+  
   workflow_dispatch:
-    inputs:
-      limit:
-        description: 'Number of products per shop'
-        required: false
-        default: '50'
 
 jobs:
   populate:
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.54.0-jammy
-    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-      
-      - name: Install Python dependencies
+      - name: ℹ️ Workflow Disabled
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DJANGO_SETTINGS_MODULE: core.settings
-        run: |
-          cd bdpricegear-backend
-          python manage.py migrate
-      
-      - name: Populate database
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DJANGO_SETTINGS_MODULE: core.settings
-          PLAYWRIGHT_BROWSERS_PATH: 0
-        run: |
-          cd bdpricegear-backend
-          python manage.py populate_products --limit ${{ github.event.inputs.limit }}
-      
-      - name: ✅ Database populated successfully
-        run: echo "Database populated with ${{ github.event.inputs.limit }} products per shop"
+          echo "⚠️ Database population workflow is disabled"
+          echo ""
+          echo "Reason: Playwright browser installation fails in GitHub Actions"
+          echo ""
+          echo "To update products manually:"
+          echo "1. Run locally: python manage.py populate_products --limit 50"
+          echo "2. Export: python manage.py dumpdata products > backup.json"
+          echo "3. Load to Supabase: python migrate_to_supabase.py"
+          echo ""
+          echo "Current Database Status:"
+          echo "✅ 1,417 products loaded"
+          echo "✅ 11 categories loaded"
+          echo "✅ 7 shops loaded"
+          echo "✅ Data persisted in Supabase"

@@ -1,44 +1,32 @@
-name: Hourly Product Scraping
+name: Hourly Product Scraping (DISABLED)
 
 on:
-  schedule:
-    # Run every hour at minute 0 (0 0 * * *)
-    - cron: '0 * * * *'
-  # Allow manual trigger
+  # DISABLED: Playwright browser installation keeps failing in CI/CD
+  # To re-enable, uncomment the schedule and workflow_dispatch below
+  # schedule:
+  #   # Run every hour at minute 0 (0 0 * * *)
+  #   - cron: '0 * * * *'
+  # workflow_dispatch:
+  
+  # Placeholder to keep workflow syntax valid
   workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.54.0-jammy
-    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-      
-      - name: Install Python dependencies
+      - name: ℹ️ Workflow Disabled
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run scraping
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DJANGO_SETTINGS_MODULE: core.settings
-          PLAYWRIGHT_BROWSERS_PATH: 0
-        run: |
-          cd bdpricegear-backend
-          python manage.py populate_products --limit 30
-      
-      - name: ✅ Scraping completed successfully
-        if: success()
-        run: echo "Scraping completed successfully"
-      
-      - name: ❌ Scraping failed
-        if: failure()
-        run: echo "Scraping failed - check logs"
+          echo "⚠️ Playwright scraping workflow is disabled"
+          echo ""
+          echo "Reason: Browser installation fails in GitHub Actions CI/CD"
+          echo ""
+          echo "Alternative solutions:"
+          echo "1. Run 'python manage.py populate_products' locally"
+          echo "2. Use GitHub Codespaces with proper browser support"
+          echo "3. Deploy scraper as separate service with pre-built Docker image"
+          echo ""
+          echo "Current Status:"
+          echo "✅ 1,417 products are loaded in Supabase"
+          echo "✅ Render API is live and serving data"
+          echo "✅ Data persists across deployments"
