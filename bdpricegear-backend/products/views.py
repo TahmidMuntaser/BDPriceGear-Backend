@@ -201,10 +201,39 @@ def health_check(request):
    
     # Health check endpoint for UptimeRobot monitoring.
     # Also prevents Render from sleeping.
+    # Returns database and Celery status.
+    
+    from django.db import connection
+    from django.core.cache import cache
+    import redis
+    
+    database_status = "disconnected"
+    redis_status = "disconnected"
+    product_count = 0
+    
+    try:
+        # Check database
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM products_product")
+            product_count = cursor.fetchone()[0]
+        database_status = "connected"
+    except Exception as e:
+        database_status = f"error: {str(e)}"
+    
+    try:
+        # Check Redis/Celery
+        from celery import current_app
+        result = current_app.control.inspect().active()
+        redis_status = "connected" if result else "no_workers"
+    except Exception as e:
+        redis_status = f"error: {str(e)}"
     
     return Response({
         "status": "ok",
         "timestamp": timezone.now().isoformat(),
         "service": "BDPriceGear Backend",
-        "database": "connected"
+        "database": database_status,
+        "redis": redis_status,
+        "products_in_db": product_count,
+        "celery_workers_active": redis_status == "connected"
     })
