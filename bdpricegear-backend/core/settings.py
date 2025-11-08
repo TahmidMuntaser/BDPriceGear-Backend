@@ -228,26 +228,29 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Get Redis URL from environment
 redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# For Upstash Redis, ensure we use rediss:// (with SSL) if the URL doesn't already have it
-if redis_url and redis_url.startswith('redis://default:') and '@inviting-pangolin' in redis_url:
-    # This is Upstash, convert to SSL
-    redis_url = redis_url.replace('redis://', 'rediss://')
+# Handle Upstash Redis URL format
+# Upstash provides: rediss://default:token@host:port
+# We need to extract and use it correctly for redis-py
+if redis_url and 'upstash.io' in redis_url:
+    # Upstash URL is already in correct format (rediss://default:token@host:port)
+    # redis-py will handle SSL automatically
+    pass
 
 CELERY_BROKER_URL = redis_url
 CELERY_RESULT_BACKEND = redis_url
 
-# Celery connection pool settings for better stability
+# Celery connection settings for Upstash Redis
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_RETRY = True
-CELERY_BROKER_POOL_LIMIT = 0  # Unlimited connections
+CELERY_BROKER_POOL_LIMIT = 0
 CELERY_BROKER_TRANSPORT_OPTIONS = {
-    'socket_connect_timeout': 5,
+    'master_name': 'mymaster',
+    'socket_connect_timeout': 10,
+    'socket_timeout': 10,
     'socket_keepalive': True,
-    'socket_keepalive_options': {
-        1: 1,
-        2: 3,
-        3: 3,
-    }
+    'health_check_interval': 30,
+    'retry_on_timeout': True,
+    'max_retries': 3,
 }
 
 CELERY_ACCEPT_CONTENT = ['json']
