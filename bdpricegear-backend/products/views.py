@@ -237,3 +237,47 @@ def health_check(request):
         "products_in_db": product_count,
         "celery_workers_active": redis_status == "connected"
     })
+
+
+@api_view(['POST', 'GET'])
+def trigger_update(request):
+    """
+    Manually trigger product update
+    POST /api/products/update/ - Trigger immediate update
+    GET /api/products/update/status/ - Check last update time
+    """
+    from django.core.management import call_command
+    from django.core.cache import cache
+    import json
+    
+    last_update = cache.get('last_product_update', None)
+    
+    if request.method == 'GET':
+        return Response({
+            "status": "ready",
+            "message": "POST to trigger update",
+            "last_update": last_update,
+            "endpoint": "/api/products/update/",
+            "method": "POST"
+        })
+    
+    # POST request - trigger update
+    try:
+        logger.info("🔄 Manual update triggered via API")
+        call_command('populate_products', limit=10)
+        
+        # Store update timestamp
+        cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
+        
+        return Response({
+            "status": "success",
+            "message": "✅ Product update completed",
+            "timestamp": timezone.now().isoformat(),
+            "products_updated": Product.objects.count()
+        }, status=200)
+    except Exception as e:
+        logger.error(f"Update failed: {str(e)}")
+        return Response({
+            "status": "error",
+            "message": f"❌ Update failed: {str(e)}"
+        }, status=500)

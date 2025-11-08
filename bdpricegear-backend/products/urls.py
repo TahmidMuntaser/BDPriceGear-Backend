@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     price_comparison, 
     ProductViewSet, CategoryViewSet, ShopViewSet,
-    health_check
+    health_check, trigger_update
 )
 
 # Create router for ViewSets
@@ -18,6 +18,9 @@ urlpatterns = [
     
     # Health check endpoint (for UptimeRobot)
     path('health/', health_check, name='health-check'),
+    
+    # Manual update trigger endpoint
+    path('update/', trigger_update, name='trigger-update'),
     
     # Product catalog API endpoints
     path('', include(router.urls)),
