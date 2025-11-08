@@ -244,7 +244,6 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_RETRY = True
 CELERY_BROKER_POOL_LIMIT = 0
 CELERY_BROKER_TRANSPORT_OPTIONS = {
-    'master_name': 'mymaster',
     'socket_connect_timeout': 10,
     'socket_timeout': 10,
     'socket_keepalive': True,
