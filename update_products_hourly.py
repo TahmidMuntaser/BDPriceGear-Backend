@@ -28,8 +28,9 @@ def update_products():
     try:
         logger.info("🔄 Starting hourly product update...")
         
-        # Run the populate_products command with a small limit for speed
-        call_command('populate_products', limit=10)
+        # Run the populate_products command with unlimited products (scrape all)
+        # Setting a very high limit ensures all available products are scraped
+        call_command('populate_products', limit=1500)
         
         logger.info("✅ Product update completed successfully")
         return True

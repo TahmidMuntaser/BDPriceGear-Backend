@@ -251,7 +251,7 @@ def trigger_update(request):
     # POST request - trigger update
     try:
         logger.info("🔄 Manual update triggered via API")
-        call_command('populate_products', limit=10)
+        call_command('populate_products', limit=1000)  # Scrape all available products
         
         # Store update timestamp
         cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
