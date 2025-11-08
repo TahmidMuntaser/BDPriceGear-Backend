@@ -1,7 +1,15 @@
+"""
+DEPRECATED: Celery and Redis have been removed in favor of APScheduler.
+This file is kept for reference but is no longer used.
+
+APScheduler handles hourly product updates without requiring Redis.
+See: update_products_hourly.py
+"""
+
 import os
 from celery import Celery
 
-# Set the default Django settings module for the 'celery' program.
+# This is no longer actively used
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
 app = Celery('core')

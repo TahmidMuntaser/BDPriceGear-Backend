@@ -220,44 +220,8 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
-# ========================================
-# CELERY CONFIGURATION
-# ========================================
-
-# Get Redis URL from environment
-redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-
-# Handle Upstash Redis URL format
-# Upstash provides: rediss://default:token@host:port
-# We need to extract and use it correctly for redis-py
-if redis_url and 'upstash.io' in redis_url:
-    # Upstash URL is already in correct format (rediss://default:token@host:port)
-    # redis-py will handle SSL automatically
-    pass
-
-CELERY_BROKER_URL = redis_url
-CELERY_RESULT_BACKEND = redis_url
-
-# Celery connection settings for Upstash Redis
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-CELERY_BROKER_CONNECTION_RETRY = True
-CELERY_BROKER_POOL_LIMIT = 0
-CELERY_BROKER_TRANSPORT_OPTIONS = {
-    'socket_connect_timeout': 10,
-    'socket_timeout': 10,
-    'socket_keepalive': True,
-    'health_check_interval': 30,
-    'retry_on_timeout': True,
-    'max_retries': 3,
-}
-
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Asia/Dhaka'
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max per task
+# Note: Redis and Celery have been removed in favor of APScheduler
+# for lightweight hourly product updates on Render free tier
 
 # Celery Beat Schedule (Hourly Scraping)
 try:

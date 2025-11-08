@@ -198,17 +198,13 @@ class ShopViewSet(viewsets.ReadOnlyModelViewSet):
 
 @api_view(['GET'])
 def health_check(request):
-   
-    # Health check endpoint for UptimeRobot monitoring.
-    # Also prevents Render from sleeping.
-    # Returns database and Celery status.
-    
+    """
+    Health check endpoint for monitoring
+    Returns database status and product count
+    """
     from django.db import connection
-    from django.core.cache import cache
-    import redis
     
     database_status = "disconnected"
-    redis_status = "disconnected"
     product_count = 0
     
     try:
@@ -220,22 +216,13 @@ def health_check(request):
     except Exception as e:
         database_status = f"error: {str(e)}"
     
-    try:
-        # Check Redis/Celery
-        from celery import current_app
-        result = current_app.control.inspect().active()
-        redis_status = "connected" if result else "no_workers"
-    except Exception as e:
-        redis_status = f"error: {str(e)}"
-    
     return Response({
         "status": "ok",
         "timestamp": timezone.now().isoformat(),
         "service": "BDPriceGear Backend",
         "database": database_status,
-        "redis": redis_status,
         "products_in_db": product_count,
-        "celery_workers_active": redis_status == "connected"
+        "scheduler": "apscheduler (hourly updates)"
     })
 
 
