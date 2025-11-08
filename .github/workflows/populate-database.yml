@@ -1,0 +1,56 @@
+name: Populate Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Number of products per shop'
+        required: false
+        default: '50'
+
+jobs:
+  populate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+      
+      - name: Run migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+        run: |
+          cd bdpricegear-backend
+          python manage.py migrate
+      
+      - name: Populate database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+          PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+        run: |
+          cd bdpricegear-backend
+          python manage.py populate_products --limit ${{ github.event.inputs.limit }}
+      
+      - name: ✅ Database populated successfully
+        run: echo "Database populated with ${{ github.event.inputs.limit }} products per shop"
