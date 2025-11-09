@@ -1,12 +1,22 @@
-name: Populate Database
+name: DISABLED - Use Render APScheduler Insteadname: Populate Database
 
-on:
+
+
+on: []  # Disabled - no triggerson:
+
   workflow_dispatch:
-    inputs:
-      limit:
-        description: 'Number of products per shop'
-        required: false
-        default: '50'
+
+jobs:    inputs:
+
+  disabled:      limit:
+
+    runs-on: ubuntu-latest        description: 'Number of products per shop'
+
+    steps:        required: false
+
+      - name: This workflow is disabled        default: '50'
+
+        run: echo "GitHub Actions not needed - using Render APScheduler for hourly updates"
 
 jobs:
   populate:

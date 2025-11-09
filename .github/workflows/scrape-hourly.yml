@@ -1,13 +1,23 @@
-name: Hourly Product Scraping
+name: DISABLED - Use Render APScheduler Insteadname: Hourly Product Scraping
 
-on:
+
+
+on: []  # Disabled - no triggerson:
+
   schedule:
-    # Run every hour at minute 0 (0 0 * * *)
-    - cron: '0 * * * *'
-  # Allow manual trigger
-  workflow_dispatch:
 
-jobs:
+jobs:    # Run every hour at minute 0 (0 0 * * *)
+
+  disabled:    - cron: '0 * * * *'
+
+    runs-on: ubuntu-latest  # Allow manual trigger
+
+    steps:  workflow_dispatch:
+
+      - name: This workflow is disabled
+
+        run: echo "GitHub Actions not needed - using Render APScheduler for hourly updates"jobs:
+
   scrape:
     runs-on: ubuntu-latest
     container:
