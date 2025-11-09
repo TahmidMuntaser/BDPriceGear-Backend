@@ -6,8 +6,12 @@ on:
 jobs:
   update-products:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Trigger product update
         run: |
+          echo "Manually triggering product update..."
           curl -X POST https://bdpricegear.onrender.com/api/update/ \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json" \
+            -w "\nHTTP Status: %{http_code}\n"
+        continue-on-error: true
