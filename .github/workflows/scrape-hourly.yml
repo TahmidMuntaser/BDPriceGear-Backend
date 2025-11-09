@@ -1,22 +1,22 @@
-name: DISABLED - Use Render APScheduler Insteadname: Hourly Product Scraping
+name: Hourly Product Update
 
-
-
-on: []  # Disabled - no triggerson:
-
+on:
   schedule:
+    # Run every hour at minute 0 UTC
+    - cron: '0 * * * *'
+  workflow_dispatch:  # Allow manual trigger
 
-jobs:    # Run every hour at minute 0 (0 0 * * *)
-
-  disabled:    - cron: '0 * * * *'
-
-    runs-on: ubuntu-latest  # Allow manual trigger
-
-    steps:  workflow_dispatch:
-
-      - name: This workflow is disabled
-
-        run: echo "GitHub Actions not needed - using Render APScheduler for hourly updates"jobs:
+jobs:
+  update-products:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger product update
+        run: |
+          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+            -H "Content-Type: application/json"
+        env:
+          # Add a small delay to ensure Render is ready
+          DELAY: 2
 
   scrape:
     runs-on: ubuntu-latest

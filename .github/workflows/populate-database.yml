@@ -1,58 +1,13 @@
-name: DISABLED - Use Render APScheduler Insteadname: Populate Database
+name: Manual Database Update
 
-
-
-on: []  # Disabled - no triggerson:
-
-  workflow_dispatch:
-
-jobs:    inputs:
-
-  disabled:      limit:
-
-    runs-on: ubuntu-latest        description: 'Number of products per shop'
-
-    steps:        required: false
-
-      - name: This workflow is disabled        default: '50'
-
-        run: echo "GitHub Actions not needed - using Render APScheduler for hourly updates"
+on:
+  workflow_dispatch:  # Manual trigger only
 
 jobs:
-  populate:
+  update-products:
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.54.0-jammy
-    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-      
-      - name: Install Python dependencies
+      - name: Trigger product update
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run migrations
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DJANGO_SETTINGS_MODULE: core.settings
-        run: |
-          cd bdpricegear-backend
-          python manage.py migrate
-      
-      - name: Populate database
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DJANGO_SETTINGS_MODULE: core.settings
-          PLAYWRIGHT_BROWSERS_PATH: 0
-        run: |
-          cd bdpricegear-backend
-          python manage.py populate_products --limit ${{ github.event.inputs.limit }}
-      
-      - name: ✅ Database populated successfully
-        run: echo "Database populated with ${{ github.event.inputs.limit }} products per shop"
+          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+            -H "Content-Type: application/json"
