@@ -1,4 +1,4 @@
-name: Hourly Product Update
+name: Hourly Product Scraping
 
 on:
   schedule:
@@ -7,17 +7,62 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  update-products:
+  scrape-and-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    
     steps:
-      - name: Trigger product update
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
         run: |
-          echo "Triggering product update..."
-          curl -X POST https://bdpricegear.onrender.com/api/update/ \
-            -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-        continue-on-error: true
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Scrape products and update Supabase
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+          PYTHONPATH: /github/workspace/bdpricegear-backend
+          PLAYWRIGHT_BROWSERS_PATH: 0
+        working-directory: ./bdpricegear-backend
+        run: |
+          echo "🔄 Starting hourly product scrape..."
+          python manage.py populate_products --limit 1500
+          echo "✅ Products scraped and saved to Supabase"
+
+      - name: Verify products in database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+          PYTHONPATH: /github/workspace/bdpricegear-backend
+        working-directory: ./bdpricegear-backend
+        run: |
+          python manage.py shell << 'EOF'
+          from products.models import Product
+          count = Product.objects.count()
+          print(f"✅ Total products in Supabase: {count}")
+          EOF
+
+      - name: ✅ Scrape completed
+        if: success()
+        run: echo "🎉 Hourly scrape and Supabase update completed successfully"
+
+      - name: ❌ Scrape failed
+        if: failure()
+        run: echo "⚠️ Hourly scrape failed - check logs"
         run: echo "Scraping completed successfully"
       
       - name: ❌ Scraping failed

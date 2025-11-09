@@ -2,16 +2,76 @@ name: Manual Database Update
 
 on:
   workflow_dispatch:  # Manual trigger only
+    inputs:
+      limit:
+        description: 'Number of products per shop to scrape (leave blank for all)'
+        required: false
+        default: '1500'
 
 jobs:
-  update-products:
+  manual-scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    
     steps:
-      - name: Trigger product update
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
         run: |
-          echo "Manually triggering product update..."
-          curl -X POST https://bdpricegear.onrender.com/api/update/ \
-            -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-        continue-on-error: true
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Manual scrape with custom limit
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+          PYTHONPATH: /github/workspace/bdpricegear-backend
+          PLAYWRIGHT_BROWSERS_PATH: 0
+        working-directory: ./bdpricegear-backend
+        run: |
+          echo "🔄 Starting manual product scrape..."
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -z "$LIMIT" ]; then
+            python manage.py populate_products
+          else
+            python manage.py populate_products --limit $LIMIT
+          fi
+          echo "✅ Products scraped and saved to Supabase"
+
+      - name: Show database statistics
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DJANGO_SETTINGS_MODULE: core.settings
+          PYTHONPATH: /github/workspace/bdpricegear-backend
+        working-directory: ./bdpricegear-backend
+        run: |
+          python manage.py shell << 'EOF'
+          from products.models import Product, Shop, Category
+          products_count = Product.objects.count()
+          shops_count = Shop.objects.count()
+          categories_count = Category.objects.count()
+          print(f"\n📊 Database Statistics:")
+          print(f"   Total Products: {products_count}")
+          print(f"   Total Shops: {shops_count}")
+          print(f"   Total Categories: {categories_count}")
+          EOF
+
+      - name: ✅ Manual update completed
+        if: success()
+        run: echo "🎉 Manual scrape completed successfully"
+
+      - name: ❌ Manual update failed
+        if: failure()
+        run: echo "⚠️ Manual scrape failed - check logs"
