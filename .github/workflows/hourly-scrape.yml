@@ -6,67 +6,49 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
 
-env:
-  DJANGO_SETTINGS_MODULE: core.settings
-  PYTHONPATH: /github/workspace/bdpricegear-backend
-
 jobs:
-  scrape:
+  trigger-scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install Python dependencies
+      - name: Trigger Render API to scrape products
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          echo "🔄 Triggering product update on Render at $(date)"
           
-      - name: Install Playwright and browsers
-        run: |
-          echo "📦 Installing Playwright browsers..."
-          python -m playwright install --with-deps chromium
-          echo "✅ Playwright installation complete"
+          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" -X POST \
+            https://bdpricegear.onrender.com/api/update/ \
+            -H "Content-Type: application/json")
           
-      - name: Verify Playwright installation
-        run: |
-          echo "🔍 Verifying Playwright browser installation..."
-          python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); print('✅ Playwright is ready'); p.stop()"
+          echo "HTTP Status: $RESPONSE"
+          
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "✅ Successfully triggered product update"
+            cat response.txt
+          else
+            echo "❌ Failed to trigger update. Status: $RESPONSE"
+            cat response.txt
+            exit 1
+          fi
 
-      - name: Run product scraping
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '0'
-        working-directory: ./bdpricegear-backend
+      - name: Wait for scraping to complete
         run: |
-          echo "🔄 Starting hourly product scrape at $(date)"
-          python manage.py populate_products --limit 1500
-          echo "✅ Scraping completed successfully"
+          echo "⏳ Waiting 2 minutes for scraping to complete..."
+          sleep 120
 
-      - name: Verify products in database
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        working-directory: ./bdpricegear-backend
+      - name: Verify update completed
         run: |
-          echo "📊 Checking database..."
-          python manage.py shell << 'EOF'
-          from products.models import Product, Shop, Category
-          products = Product.objects.count()
-          shops = Shop.objects.count()
-          categories = Category.objects.count()
-          print(f"\n✅ Database Status:")
-          print(f"   Total Products: {products}")
-          print(f"   Total Shops: {shops}")
-          print(f"   Total Categories: {categories}\n")
-          EOF
+          echo "📊 Checking if products were updated..."
+          
+          curl -s https://bdpricegear.onrender.com/api/health/ | tee health.json
+          
+          PRODUCT_COUNT=$(cat health.json | grep -o '"products_in_db":[0-9]*' | grep -o '[0-9]*')
+          
+          if [ ! -z "$PRODUCT_COUNT" ] && [ "$PRODUCT_COUNT" -gt 0 ]; then
+            echo "✅ Database has $PRODUCT_COUNT products"
+          else
+            echo "⚠️ Could not verify product count"
+          fi
 
       - name: Success notification
         if: success()
