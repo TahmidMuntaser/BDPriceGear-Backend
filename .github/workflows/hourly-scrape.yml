@@ -1,0 +1,74 @@
+name: Hourly Product Scraping
+
+on:
+  schedule:
+    # Run every hour at minute 0 UTC
+    - cron: '0 * * * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
+
+env:
+  DJANGO_SETTINGS_MODULE: core.settings
+  PYTHONPATH: /github/workspace/bdpricegear-backend
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run product scraping
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PLAYWRIGHT_BROWSERS_PATH: 0
+        working-directory: ./bdpricegear-backend
+        run: |
+          echo "🔄 Starting hourly product scrape at $(date)"
+          python manage.py populate_products --limit 1500
+          echo "✅ Scraping completed successfully"
+
+      - name: Verify products in database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        working-directory: ./bdpricegear-backend
+        run: |
+          echo "📊 Checking database..."
+          python manage.py shell << 'EOF'
+          from products.models import Product, Shop, Category
+          products = Product.objects.count()
+          shops = Shop.objects.count()
+          categories = Category.objects.count()
+          print(f"\n✅ Database Status:")
+          print(f"   Total Products: {products}")
+          print(f"   Total Shops: {shops}")
+          print(f"   Total Categories: {categories}\n")
+          EOF
+
+      - name: Success notification
+        if: success()
+        run: |
+          echo "🎉 Hourly scrape completed successfully at $(date)"
+
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ Hourly scrape failed at $(date)"
+          exit 1
