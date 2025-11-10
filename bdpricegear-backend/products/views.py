@@ -230,41 +230,56 @@ def health_check(request):
 def trigger_update(request):
     """
     Manually trigger product update
-    POST /api/products/update/ - Trigger immediate update
+    POST /api/products/update/ - Trigger immediate update (async)
     GET /api/products/update/status/ - Check last update time
     """
     from django.core.management import call_command
     from django.core.cache import cache
-    import json
+    import threading
     
     last_update = cache.get('last_product_update', None)
+    update_in_progress = cache.get('update_in_progress', False)
     
     if request.method == 'GET':
         return Response({
             "status": "ready",
             "message": "POST to trigger update",
             "last_update": last_update,
+            "update_in_progress": update_in_progress,
             "endpoint": "/api/products/update/",
             "method": "POST"
         })
     
-    # POST request - trigger update
-    try:
-        logger.info("🔄 Manual update triggered via API")
-        call_command('populate_products', limit=1500)  # Scrape all available products
-        
-        # Store update timestamp
-        cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
-        
+    # POST request - trigger update in background
+    if update_in_progress:
         return Response({
-            "status": "success",
-            "message": "✅ Product update completed",
-            "timestamp": timezone.now().isoformat(),
-            "products_updated": Product.objects.count()
+            "status": "already_running",
+            "message": "⏳ Update already in progress",
+            "last_update": last_update
         }, status=200)
-    except Exception as e:
-        logger.error(f"Update failed: {str(e)}")
-        return Response({
-            "status": "error",
-            "message": f"❌ Update failed: {str(e)}"
-        }, status=500)
+    
+    def run_update():
+        """Run update in background thread"""
+        try:
+            cache.set('update_in_progress', True, timeout=3600)  # 1 hour timeout
+            logger.info("🔄 Manual update triggered via API")
+            call_command('populate_products', limit=1500)  # Scrape all available products
+            
+            # Store update timestamp
+            cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
+            cache.delete('update_in_progress')
+            logger.info("✅ Product update completed")
+        except Exception as e:
+            logger.error(f"Update failed: {str(e)}")
+            cache.delete('update_in_progress')
+    
+    # Start update in background thread
+    thread = threading.Thread(target=run_update, daemon=True)
+    thread.start()
+    
+    return Response({
+        "status": "started",
+        "message": "✅ Product update started in background",
+        "timestamp": timezone.now().isoformat(),
+        "note": "Check GET /api/update/ for status"
+    }, status=202)  # 202 Accepted - processing started
