@@ -222,7 +222,8 @@ def health_check(request):
         "service": "BDPriceGear Backend",
         "database": database_status,
         "products_in_db": product_count,
-        "scheduler": "apscheduler (hourly updates)"
+        "scheduler": "GitHub Actions (hourly updates)",
+        "update_method": "GitHub Actions triggers /api/update/ every hour"
     })
 
 
