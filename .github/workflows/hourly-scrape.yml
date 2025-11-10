@@ -2,61 +2,19 @@ name: Hourly Product Scraping
 
 on:
   schedule:
-    # Run every hour at minute 0 UTC
+    # Runs every hour at minute 0
     - cron: '0 * * * *'
-  workflow_dispatch:  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
 
 jobs:
-  trigger-scrape:
+  trigger-scraping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
+    
     steps:
-      - name: Trigger Render API to scrape products
+      - name: Trigger Product Update
         run: |
-          echo "🔄 Triggering product update on Render at $(date)"
-          
-          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" -X POST \
-            https://bdpricegear.onrender.com/api/update/ \
-            -H "Content-Type: application/json")
-          
-          echo "HTTP Status: $RESPONSE"
-          
-          if [ "$RESPONSE" -eq 200 ]; then
-            echo "✅ Successfully triggered product update"
-            cat response.txt
-          else
-            echo "❌ Failed to trigger update. Status: $RESPONSE"
-            cat response.txt
-            exit 1
-          fi
-
-      - name: Wait for scraping to complete
-        run: |
-          echo "⏳ Waiting 2 minutes for scraping to complete..."
-          sleep 120
-
-      - name: Verify update completed
-        run: |
-          echo "📊 Checking if products were updated..."
-          
-          curl -s https://bdpricegear.onrender.com/api/health/ | tee health.json
-          
-          PRODUCT_COUNT=$(cat health.json | grep -o '"products_in_db":[0-9]*' | grep -o '[0-9]*')
-          
-          if [ ! -z "$PRODUCT_COUNT" ] && [ "$PRODUCT_COUNT" -gt 0 ]; then
-            echo "✅ Database has $PRODUCT_COUNT products"
-          else
-            echo "⚠️ Could not verify product count"
-          fi
-
-      - name: Success notification
-        if: success()
-        run: |
-          echo "🎉 Hourly scrape completed successfully at $(date)"
-
-      - name: Failure notification
-        if: failure()
-        run: |
-          echo "❌ Hourly scrape failed at $(date)"
-          exit 1
+          echo "Triggering product update at $(date)"
+          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP Status: %{http_code}\n"
+          echo "Update triggered successfully!"
