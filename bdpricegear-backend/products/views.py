@@ -239,8 +239,7 @@ def health_check(request):
         "service": "BDPriceGear Backend",
         "database": database_status,
         "products_in_db": product_count,
-        "last_update": last_update,
-        "last_update_dhaka": last_update_dhaka,
+        "last_update": last_update_dhaka,
         "update_in_progress": update_in_progress,
         "scheduler": "GitHub Actions (hourly updates)",
         "update_method": "GitHub Actions triggers /api/update/ every hour"
@@ -262,23 +261,22 @@ def trigger_update(request):
     update_in_progress = cache.get('update_in_progress', False)
     
     if request.method == 'GET':
-        # Also provide last_update in Dhaka timezone
+        # Provide last_update in Dhaka timezone only
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        last_update_dhaka = None
+        last_update_dhaka = 'Never updated'
         if last_update:
             try:
                 dt = datetime.fromisoformat(last_update)
                 last_update_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka')).isoformat()
             except Exception:
-                last_update_dhaka = last_update
+                last_update_dhaka = last_update if last_update else 'Never updated'
 
         return Response({
             "status": "ready",
             "message": "POST to trigger update",
-            "last_update": last_update,
-            "last_update_dhaka": last_update_dhaka,
+            "last_update": last_update_dhaka,
             "update_in_progress": update_in_progress,
             "endpoint": "/api/products/update/",
             "method": "POST"
@@ -286,10 +284,21 @@ def trigger_update(request):
     
     # POST request - trigger update in background
     if update_in_progress:
+        # Convert last_update to Dhaka timezone for response
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        last_update_dhaka = 'Never updated'
+        if last_update:
+            try:
+                dt = datetime.fromisoformat(last_update)
+                last_update_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka')).isoformat()
+            except Exception:
+                last_update_dhaka = last_update if last_update else 'Never updated'
+        
         return Response({
             "status": "already_running",
             "message": "⏳ Update already in progress",
-            "last_update": last_update
+            "last_update": last_update_dhaka
         }, status=200)
     
     def run_update():
