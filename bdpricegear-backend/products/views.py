@@ -204,11 +204,25 @@ def health_check(request):
     """
     from django.db import connection
     from django.core.cache import cache
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     
     database_status = "disconnected"
     product_count = 0
-    last_update = cache.get('last_product_update', 'Never updated')
+    last_update = cache.get('last_product_update', None)
     update_in_progress = cache.get('update_in_progress', False)
+
+    # Convert cached ISO timestamp to Asia/Dhaka timezone (if present)
+    last_update_dhaka = 'Never updated'
+    if last_update:
+        try:
+            # Parse ISO (may contain offset) then localize to Dhaka
+            dt = datetime.fromisoformat(last_update)
+            dt_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka'))
+            last_update_dhaka = dt_dhaka.isoformat()
+        except Exception:
+            # Fallback to raw string if parsing fails
+            last_update_dhaka = last_update
     
     try:
         # Check database
@@ -226,6 +240,7 @@ def health_check(request):
         "database": database_status,
         "products_in_db": product_count,
         "last_update": last_update,
+        "last_update_dhaka": last_update_dhaka,
         "update_in_progress": update_in_progress,
         "scheduler": "GitHub Actions (hourly updates)",
         "update_method": "GitHub Actions triggers /api/update/ every hour"
@@ -247,10 +262,23 @@ def trigger_update(request):
     update_in_progress = cache.get('update_in_progress', False)
     
     if request.method == 'GET':
+        # Also provide last_update in Dhaka timezone
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        last_update_dhaka = None
+        if last_update:
+            try:
+                dt = datetime.fromisoformat(last_update)
+                last_update_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka')).isoformat()
+            except Exception:
+                last_update_dhaka = last_update
+
         return Response({
             "status": "ready",
             "message": "POST to trigger update",
             "last_update": last_update,
+            "last_update_dhaka": last_update_dhaka,
             "update_in_progress": update_in_progress,
             "endpoint": "/api/products/update/",
             "method": "POST"
