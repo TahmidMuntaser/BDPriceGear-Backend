@@ -203,9 +203,12 @@ def health_check(request):
     Returns database status and product count
     """
     from django.db import connection
+    from django.core.cache import cache
     
     database_status = "disconnected"
     product_count = 0
+    last_update = cache.get('last_product_update', 'Never updated')
+    update_in_progress = cache.get('update_in_progress', False)
     
     try:
         # Check database
@@ -222,6 +225,8 @@ def health_check(request):
         "service": "BDPriceGear Backend",
         "database": database_status,
         "products_in_db": product_count,
+        "last_update": last_update,
+        "update_in_progress": update_in_progress,
         "scheduler": "GitHub Actions (hourly updates)",
         "update_method": "GitHub Actions triggers /api/update/ every hour"
     })
