@@ -204,31 +204,30 @@ def health_check(request):
     """
     from django.db import connection
     from django.core.cache import cache
-    from datetime import datetime
     from zoneinfo import ZoneInfo
     
     database_status = "disconnected"
     product_count = 0
-    last_update = cache.get('last_product_update', None)
     update_in_progress = cache.get('update_in_progress', False)
 
-    # Convert cached ISO timestamp to Asia/Dhaka timezone (if present)
+    # Get last scrape time from most recently updated product
     last_update_dhaka = 'Never updated'
-    if last_update:
-        try:
-            # Parse ISO (may contain offset) then localize to Dhaka
-            dt = datetime.fromisoformat(last_update)
-            dt_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka'))
-            last_update_dhaka = dt_dhaka.isoformat()
-        except Exception:
-            # Fallback to raw string if parsing fails
-            last_update_dhaka = last_update
     
     try:
-        # Check database
+        # Check database and get last update time
         with connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM products_product")
             product_count = cursor.fetchone()[0]
+            
+            # Get the most recent updated_at timestamp
+            cursor.execute("SELECT MAX(updated_at) FROM products_product")
+            last_updated = cursor.fetchone()[0]
+            
+            if last_updated:
+                # Convert to Dhaka timezone
+                dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')  # Human-readable format
+            
         database_status = "connected"
     except Exception as e:
         database_status = f"error: {str(e)}"
@@ -255,23 +254,26 @@ def trigger_update(request):
     """
     from django.core.management import call_command
     from django.core.cache import cache
+    from django.db import connection
     import threading
     
-    last_update = cache.get('last_product_update', None)
     update_in_progress = cache.get('update_in_progress', False)
     
     if request.method == 'GET':
-        # Provide last_update in Dhaka timezone only
-        from datetime import datetime
+        # Get last update from database (most recent product updated_at)
         from zoneinfo import ZoneInfo
-
+        
         last_update_dhaka = 'Never updated'
-        if last_update:
-            try:
-                dt = datetime.fromisoformat(last_update)
-                last_update_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka')).isoformat()
-            except Exception:
-                last_update_dhaka = last_update if last_update else 'Never updated'
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT MAX(updated_at) FROM products_product")
+                last_updated = cursor.fetchone()[0]
+                
+                if last_updated:
+                    dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                    last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+        except Exception:
+            pass
 
         return Response({
             "status": "ready",
@@ -284,16 +286,18 @@ def trigger_update(request):
     
     # POST request - trigger update in background
     if update_in_progress:
-        # Convert last_update to Dhaka timezone for response
-        from datetime import datetime
+        # Get last update from database for already_running response
         from zoneinfo import ZoneInfo
         last_update_dhaka = 'Never updated'
-        if last_update:
-            try:
-                dt = datetime.fromisoformat(last_update)
-                last_update_dhaka = timezone.localtime(dt, ZoneInfo('Asia/Dhaka')).isoformat()
-            except Exception:
-                last_update_dhaka = last_update if last_update else 'Never updated'
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT MAX(updated_at) FROM products_product")
+                last_updated = cursor.fetchone()[0]
+                if last_updated:
+                    dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                    last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+        except Exception:
+            pass
         
         return Response({
             "status": "already_running",
