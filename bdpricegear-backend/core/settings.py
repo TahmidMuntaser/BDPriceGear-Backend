@@ -220,23 +220,6 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Note: Redis and Celery have been removed in favor of APScheduler
-# for lightweight hourly product updates on Render free tier
-
-# Celery Beat Schedule (Hourly Scraping)
-try:
-    from celery.schedules import crontab
-    CELERY_BEAT_SCHEDULE = {
-        'scrape-all-shops-hourly': {
-            'task': 'products.tasks.scrape_all_shops',
-            'schedule': crontab(minute=0, hour='*/1'),  # Every hour at minute 0
-        },
-    }
-except ImportError:
-    # Celery not installed (local development without Celery)
-    CELERY_BEAT_SCHEDULE = {}
-
-
 
 # ========================================
 # REST FRAMEWORK CONFIGURATION
