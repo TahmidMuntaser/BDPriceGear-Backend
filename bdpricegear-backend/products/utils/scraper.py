@@ -30,34 +30,57 @@ def normalize_price(text):
 # ryans 
 async def scrape_ryans(product, context):
     results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
+    page = None
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
         page = await context.new_page()
-        await page.goto(url, timeout=12000, wait_until="domcontentloaded")
+        
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+        """)
+        
+        await page.goto(url, timeout=15000, wait_until="load")
+        await asyncio.sleep(2)
         await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
         soup = BeautifulSoup(await page.content(), "html.parser")
-        for item in soup.select(".category-single-product"):
-            name_elem = item.select_one(".card-text a")
+        items = soup.select(".category-single-product")
+        
+        for item in items:
+            name_elem = item.select_one(".card-body .card-text a")
             price_elem = item.select_one(".pr-text")
             link_elem = item.select_one(".image-box a")
             img_elem = item.select_one(".image-box img")
 
-            results["products"].append({
-                "id": str(uuid.uuid4()),
-                "name": name_elem.get_text(strip=True) if name_elem else "Name not found",
-                "price": normalize_price(price_elem.get_text(strip=True) if price_elem else "0"),
-                "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
-                "img": img_elem["src"] if img_elem else "",
-                "in_stock": True
-            })
+            if name_elem:
+                product_name = name_elem.get_text(strip=True)
+                product_link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else "#"
+                product_price = normalize_price(price_elem.get_text(strip=True)) if price_elem else "Out of Stock"
+                product_img = img_elem["src"] if img_elem and img_elem.has_attr("src") else ""
+                
+                if product_img and not product_img.startswith(('http://', 'https://')):
+                    product_img = urllib.parse.urljoin(url, product_img)
+                
+                results["products"].append({
+                    "id": str(uuid.uuid4()),
+                    "name": product_name,
+                    "price": product_price,
+                    "link": product_link,
+                    "img": product_img,
+                    "in_stock": True
+                })
 
-        await page.close()
+        logger.info(f"Ryans: Scraped {len(results['products'])} products")
         return results
     except Exception as e:
         logger.error(f"Ryans error: {e}")
         return results
+    finally:
+        if page:
+            await page.close()
 
 
 #static scrapper
