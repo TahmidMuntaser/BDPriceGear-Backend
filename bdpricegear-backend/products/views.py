@@ -172,16 +172,12 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Override to filter available products by default in list view"""
+        """Return all products by default, including out-of-stock and zero-price."""
         queryset = super().get_queryset()
-        
-        # In list view, exclude unavailable products unless explicitly requested
-        if self.action == 'list':
-            show_unavailable = self.request.query_params.get('show_unavailable', 'false').lower() == 'true'
-            if not show_unavailable:
-                queryset = queryset.filter(is_available=True)
-        
-        # In detail view, always show the product (even if unavailable) for transparency
+        # If user explicitly requests only available products, filter them
+        only_available = self.request.query_params.get('only_available', 'false').lower() == 'true'
+        if only_available:
+            queryset = queryset.filter(is_available=True)
         return queryset
     
     def get_serializer_class(self):
