@@ -244,14 +244,24 @@ class Command(BaseCommand):
                 products = products[:limit]
             
             for product_data in products:
-                # Skip if no valid price
+                # Get price and validate
                 price = product_data.get('price')
-                if isinstance(price, str) or price == 0:
-                    continue
                 
                 product_url = product_data.get('link', '')
                 if not product_url or product_url == '#' or product_url == 'Link not found':
                     continue
+                
+                # Determine stock status and availability based on price
+                if isinstance(price, str) or price == 0 or price is None:
+                    # Invalid price means out of stock
+                    stock_status = 'out_of_stock'
+                    is_available = False
+                    current_price = 0
+                else:
+                    # Valid price means in stock
+                    stock_status = 'in_stock' if product_data.get('in_stock', True) else 'out_of_stock'
+                    is_available = stock_status == 'in_stock'
+                    current_price = price
                 
                 # Create/update product
                 product, created = Product.objects.update_or_create(
@@ -261,9 +271,9 @@ class Command(BaseCommand):
                         'name': product_data.get('name', 'Unknown Product')[:500],
                         'category': category,
                         'image_url': product_data.get('img', ''),
-                        'current_price': price,
-                        'stock_status': 'in_stock' if product_data.get('in_stock', True) else 'out_of_stock',
-                        'is_available': True,
+                        'current_price': current_price,
+                        'stock_status': stock_status,
+                        'is_available': is_available,
                         'last_scraped': timezone.now(),
                     }
                 )

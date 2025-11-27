@@ -105,8 +105,12 @@ class Product(models.Model):
         if not self.slug:
             self.slug = slugify(self.name)[:500]
         
-        # Update stock status based on price
-        if isinstance(self.current_price, str) or self.current_price == 0:
+        # Update stock status based on price (handle edge cases)
+        try:
+            if self.current_price is None or float(self.current_price) == 0:
+                self.stock_status = 'out_of_stock'
+                self.is_available = False
+        except (ValueError, TypeError):
             self.stock_status = 'out_of_stock'
             self.is_available = False
         

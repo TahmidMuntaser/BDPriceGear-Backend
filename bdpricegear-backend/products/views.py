@@ -162,13 +162,27 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     # - ?brand=asus
     # - ?in_stock=true
     # - ?on_sale=true
+    # - ?show_unavailable=true (to include out of stock items)
     
-    queryset = Product.objects.filter(is_available=True).select_related('category', 'shop')
+    queryset = Product.objects.all().select_related('category', 'shop')
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ProductFilter
     search_fields = ['name', 'brand', 'description']
     ordering_fields = ['current_price', 'created_at', 'discount_percentage', 'name']
     ordering = ['-created_at']
+    
+    def get_queryset(self):
+        """Override to filter available products by default in list view"""
+        queryset = super().get_queryset()
+        
+        # In list view, exclude unavailable products unless explicitly requested
+        if self.action == 'list':
+            show_unavailable = self.request.query_params.get('show_unavailable', 'false').lower() == 'true'
+            if not show_unavailable:
+                queryset = queryset.filter(is_available=True)
+        
+        # In detail view, always show the product (even if unavailable) for transparency
+        return queryset
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
