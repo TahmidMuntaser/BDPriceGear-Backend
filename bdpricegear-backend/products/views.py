@@ -1,11 +1,12 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
@@ -218,6 +219,148 @@ class ShopViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = 'slug'
 
 
+@swagger_auto_schema(
+    method='get',
+    manual_parameters=[
+        openapi.Parameter(
+            'product_id',
+            openapi.IN_PATH,
+            description="Product ID to compare prices across shops",
+            type=openapi.TYPE_INTEGER,
+            required=True
+        ),
+        openapi.Parameter(
+            'days',
+            openapi.IN_QUERY,
+            description="Number of days of price history to include (default: 30)",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        )
+    ],
+    operation_description="Compare a specific product's price across different shops and show price history",
+    responses={
+        200: "Product price comparison with history",
+        404: "Product not found"
+    }
+)
+@api_view(['GET'])
+def compare_product_prices(request, product_id):
+    """
+    Compare prices of a specific product from database across different shops.
+    Shows current price, price history, and similar products from other shops.
+    
+    GET /api/products/{product_id}/compare/
+    Query params:
+    - days: Number of days of price history (default: 30, max: 90)
+    """
+    from datetime import timedelta
+    from django.db.models import Q, Min, Max, Avg
+    
+    # Get the product
+    product = get_object_or_404(Product.objects.select_related('category', 'shop'), id=product_id)
+    
+    # Get days parameter (default 30, max 90)
+    days = int(request.GET.get('days', 30))
+    days = min(max(days, 1), 90)  # Clamp between 1 and 90
+    
+    cutoff_date = timezone.now() - timedelta(days=days)
+    
+    # Get price history for this product
+    price_history = product.price_history.filter(
+        recorded_at__gte=cutoff_date
+    ).order_by('-recorded_at')[:100]
+    
+    history_data = [{
+        'price': float(h.price),
+        'stock_status': h.stock_status,
+        'date': h.recorded_at.strftime('%Y-%m-%d %H:%M')
+    } for h in price_history]
+    
+    # Calculate price statistics
+    history_prices = [float(h.price) for h in price_history if float(h.price) > 0]
+    
+    price_stats = {
+        'current_price': float(product.current_price),
+        'lowest_price': min(history_prices) if history_prices else float(product.current_price),
+        'highest_price': max(history_prices) if history_prices else float(product.current_price),
+        'average_price': round(sum(history_prices) / len(history_prices), 2) if history_prices else float(product.current_price),
+        'price_trend': None
+    }
+    
+    # Calculate trend (comparing first vs last 7 days)
+    if len(history_prices) > 7:
+        recent_avg = sum(history_prices[:7]) / 7
+        older_avg = sum(history_prices[-7:]) / 7
+        change_percent = ((recent_avg - older_avg) / older_avg * 100) if older_avg > 0 else 0
+        
+        if change_percent > 2:
+            price_stats['price_trend'] = 'increasing'
+        elif change_percent < -2:
+            price_stats['price_trend'] = 'decreasing'
+        else:
+            price_stats['price_trend'] = 'stable'
+    
+    # Find similar products from other shops (same category, similar name)
+    similar_products = Product.objects.filter(
+        category=product.category,
+        is_available=True
+    ).exclude(
+        id=product.id
+    ).select_related('shop').order_by('current_price')[:10]
+    
+    # Group by shop and find best match
+    shop_comparisons = {}
+    for similar in similar_products:
+        shop_name = similar.shop.name
+        if shop_name not in shop_comparisons:
+            # Calculate name similarity (simple word matching)
+            product_words = set(product.name.lower().split())
+            similar_words = set(similar.name.lower().split())
+            common_words = len(product_words & similar_words)
+            
+            shop_comparisons[shop_name] = {
+                'shop_id': similar.shop.id,
+                'shop_name': shop_name,
+                'shop_logo': similar.shop.logo_url,
+                'product_id': similar.id,
+                'product_name': similar.name,
+                'product_url': similar.product_url,
+                'price': float(similar.current_price),
+                'stock_status': similar.stock_status,
+                'similarity_score': common_words,
+                'price_difference': float(similar.current_price - product.current_price)
+            }
+    
+    # Convert to list and sort by price
+    comparisons_list = sorted(
+        shop_comparisons.values(),
+        key=lambda x: x['price']
+    )
+    
+    return Response({
+        'product': {
+            'id': product.id,
+            'name': product.name,
+            'category': product.category.name if product.category else None,
+            'shop': product.shop.name,
+            'shop_logo': product.shop.logo_url,
+            'image_url': product.image_url,
+            'product_url': product.product_url,
+            'stock_status': product.stock_status,
+            'is_available': product.is_available,
+            'last_updated': product.updated_at.strftime('%Y-%m-%d %H:%M')
+        },
+        'price_stats': price_stats,
+        'price_history': history_data,
+        'similar_products_from_other_shops': comparisons_list,
+        'metadata': {
+            'history_days': days,
+            'history_records': len(history_data),
+            'shops_compared': len(comparisons_list)
+        }
+    })
+
+
 @api_view(['GET'])
 def health_check(request):
     """
@@ -352,3 +495,243 @@ def trigger_update(request):
         "timestamp": timezone.now().isoformat(),
         "note": "Check GET /api/update/ for status"
     }, status=202)  # 202 Accepted - processing started
+
+
+@api_view(['POST', 'GET'])
+def cleanup_old_data(request):
+    """
+    Cleanup old price history data (3 months+)
+    POST /api/cleanup/ - Trigger cleanup (async)
+    GET /api/cleanup/ - Check cleanup status
+    """
+    from django.core.management import call_command
+    from django.core.cache import cache
+    from datetime import timedelta
+    import threading
+    
+    cleanup_in_progress = cache.get('cleanup_in_progress', False)
+    
+    if request.method == 'GET':
+        from products.models import PriceHistory
+        
+        total_records = PriceHistory.objects.count()
+        cutoff_date = timezone.now() - timedelta(days=90)
+        old_records = PriceHistory.objects.filter(recorded_at__lt=cutoff_date).count()
+        
+        last_cleanup = cache.get('last_cleanup_time', 'Never')
+        
+        return Response({
+            "status": "ready",
+            "message": "POST to trigger cleanup",
+            "total_price_history_records": total_records,
+            "records_older_than_90_days": old_records,
+            "cleanup_in_progress": cleanup_in_progress,
+            "last_cleanup": last_cleanup,
+            "endpoint": "/api/cleanup/",
+            "method": "POST"
+        })
+    
+    # POST request - trigger cleanup
+    if cleanup_in_progress:
+        return Response({
+            "status": "already_running",
+            "message": " Cleanup already in progress"
+        }, status=200)
+    
+    def run_cleanup():
+        """Run cleanup in background thread"""
+        try:
+            cache.set('cleanup_in_progress', True, timeout=3600)
+            logger.info(" Price history cleanup triggered via API")
+            
+            # Run cleanup command (90 days)
+            from io import StringIO
+            from datetime import timedelta
+            from products.models import PriceHistory
+            
+            cutoff_date = timezone.now() - timedelta(days=90)
+            old_records = PriceHistory.objects.filter(recorded_at__lt=cutoff_date)
+            count = old_records.count()
+            
+            if count > 0:
+                deleted_count, _ = old_records.delete()
+                logger.info(f"Deleted {deleted_count:,} old price history records")
+            else:
+                logger.info("No old records to delete")
+            
+            cache.set('last_cleanup_time', timezone.now().isoformat(), timeout=None)
+            cache.set('last_cleanup_deleted', count, timeout=None)
+            cache.delete('cleanup_in_progress')
+            
+        except Exception as e:
+            logger.error(f"Cleanup failed: {str(e)}")
+            cache.delete('cleanup_in_progress')
+    
+    thread = threading.Thread(target=run_cleanup, daemon=True)
+    thread.start()
+    
+    return Response({
+        "status": "started",
+        "message": "Price history cleanup started in background",
+        "timestamp": timezone.now().isoformat(),
+        "note": "Deleting records older than 90 days (3 months)"
+    }, status=202)
+
+
+@api_view(['POST', 'GET'])
+def trigger_catalog_update(request):
+    """
+    Trigger catalog update (scrapes all pages from all websites)
+    POST /api/catalog/update/ - Trigger full catalog scrape
+    GET /api/catalog/update/ - Check catalog update status
+    """
+    from django.core.management import call_command
+    from django.core.cache import cache
+    from django.db import connection
+    import threading
+    
+    catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
+    
+    if request.method == 'GET':
+        from zoneinfo import ZoneInfo
+        
+        last_catalog_update = 'Never updated'
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT MAX(updated_at) FROM products_product")
+                last_updated = cursor.fetchone()[0]
+                
+                if last_updated:
+                    dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                    last_catalog_update = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+        except Exception:
+            pass
+
+        return Response({
+            "status": "ready",
+            "message": "POST to trigger full catalog update",
+            "last_catalog_update": last_catalog_update,
+            "catalog_update_in_progress": catalog_update_in_progress,
+            "endpoint": "/api/catalog/update/",
+            "method": "POST",
+            "note": "This scrapes all pages from all websites (takes longer)"
+        })
+    
+    if catalog_update_in_progress:
+        from zoneinfo import ZoneInfo
+        last_catalog_update = 'Never updated'
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT MAX(updated_at) FROM products_product")
+                last_updated = cursor.fetchone()[0]
+                if last_updated:
+                    dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                    last_catalog_update = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+        except Exception:
+            pass
+        
+        return Response({
+            "status": "already_running",
+            "message": "Catalog update already in progress",
+            "last_catalog_update": last_catalog_update
+        }, status=200)
+    
+    def run_catalog_update():
+        try:
+            cache.set('catalog_update_in_progress', True, timeout=7200)
+            logger.info("Full catalog update triggered via API")
+            call_command('populate_catalog')
+            
+            cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
+            cache.delete('catalog_update_in_progress')
+            logger.info("Catalog update completed")
+        except Exception as e:
+            logger.error(f"Catalog update failed: {str(e)}")
+            cache.delete('catalog_update_in_progress')
+    
+    thread = threading.Thread(target=run_catalog_update, daemon=True)
+    thread.start()
+    
+    return Response({
+        "status": "started",
+        "message": "Full catalog update started in background",
+        "timestamp": timezone.now().isoformat(),
+        "note": "Scraping all pages from all websites. Check GET /api/catalog/update/ for status"
+    }, status=202)
+
+
+@api_view(['POST', 'GET'])
+def cleanup_old_products(request):
+    """
+    Cleanup products not updated in 6 months
+    POST /api/cleanup/products/ - Trigger product cleanup
+    GET /api/cleanup/products/ - Check cleanup status
+    """
+    from django.core.management import call_command
+    from django.core.cache import cache
+    from datetime import timedelta
+    import threading
+    
+    product_cleanup_in_progress = cache.get('product_cleanup_in_progress', False)
+    
+    if request.method == 'GET':
+        from products.models import Product
+        
+        total_products = Product.objects.count()
+        cutoff_date = timezone.now() - timedelta(days=180)
+        old_products = Product.objects.filter(updated_at__lt=cutoff_date).count()
+        
+        last_product_cleanup = cache.get('last_product_cleanup_time', 'Never')
+        
+        return Response({
+            "status": "ready",
+            "message": "POST to trigger product cleanup",
+            "total_products": total_products,
+            "products_older_than_6_months": old_products,
+            "product_cleanup_in_progress": product_cleanup_in_progress,
+            "last_product_cleanup": last_product_cleanup,
+            "endpoint": "/api/cleanup/products/",
+            "method": "POST"
+        })
+    
+    if product_cleanup_in_progress:
+        return Response({
+            "status": "already_running",
+            "message": "Product cleanup already in progress"
+        }, status=200)
+    
+    def run_product_cleanup():
+        try:
+            cache.set('product_cleanup_in_progress', True, timeout=3600)
+            logger.info("Product cleanup triggered via API")
+            
+            from datetime import timedelta
+            from products.models import Product
+            
+            cutoff_date = timezone.now() - timedelta(days=180)
+            old_products = Product.objects.filter(updated_at__lt=cutoff_date)
+            count = old_products.count()
+            
+            if count > 0:
+                deleted_count, _ = old_products.delete()
+                logger.info(f"Deleted {deleted_count:,} old products")
+            else:
+                logger.info("No old products to delete")
+            
+            cache.set('last_product_cleanup_time', timezone.now().isoformat(), timeout=None)
+            cache.set('last_product_cleanup_deleted', count, timeout=None)
+            cache.delete('product_cleanup_in_progress')
+            
+        except Exception as e:
+            logger.error(f"Product cleanup failed: {str(e)}")
+            cache.delete('product_cleanup_in_progress')
+    
+    thread = threading.Thread(target=run_product_cleanup, daemon=True)
+    thread.start()
+    
+    return Response({
+        "status": "started",
+        "message": "Product cleanup started in background",
+        "timestamp": timezone.now().isoformat(),
+        "note": "Deleting products not updated in 6 months"
+    }, status=202)

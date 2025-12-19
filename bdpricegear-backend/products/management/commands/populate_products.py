@@ -40,7 +40,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('🚀 Starting database population...'))
+        self.stdout.write(self.style.SUCCESS(' Starting database population...'))
         
         # Step 1: Create categories
         self.stdout.write('\n📁 Creating categories...')
@@ -71,8 +71,8 @@ class Command(BaseCommand):
             self.stdout.write(f'    ✓ {created} created, {updated} updated')
         
         # Summary
-        self.stdout.write(self.style.SUCCESS(f'\n✨ Done! Total: {total_created} products created, {total_updated} updated'))
-        self.stdout.write(self.style.SUCCESS(f'\n🎉 Database populated successfully!'))
+        self.stdout.write(self.style.SUCCESS(f'\n Done! Total: {total_created} products created, {total_updated} updated'))
+        self.stdout.write(self.style.SUCCESS(f'\n Database populated successfully!'))
 
     def create_categories(self, search_terms):
         """Create categories from search terms"""
