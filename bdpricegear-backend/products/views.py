@@ -640,7 +640,14 @@ def trigger_catalog_update(request):
         try:
             cache.set('catalog_update_in_progress', True, timeout=7200)
             logger.info("Full catalog update triggered via API")
-            call_command('populate_catalog')
+            
+            # Get categories from query parameter
+            categories = request.GET.get('categories', '')
+            if categories:
+                category_list = [c.strip() for c in categories.split(',')]
+                call_command('populate_catalog', categories=category_list)
+            else:
+                call_command('populate_catalog')
             
             cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
             cache.delete('catalog_update_in_progress')

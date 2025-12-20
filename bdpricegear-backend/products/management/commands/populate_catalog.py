@@ -1,4 +1,3 @@
-
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction
@@ -120,63 +119,39 @@ class Command(BaseCommand):
 
     def run_catalog_scrapers_streaming(self, category, data_queue):
         """Run scrapers and stream results to queue as they complete"""
-        async def gather_scrapers_streaming(cat, queue):
-            async def run_dynamic():
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
-                    context = await browser.new_context(user_agent="Mozilla/5.0")
-
-                    try:
-                        # Run Ryans
-                        ryans_result = await asyncio.wait_for(scrape_ryans_catalog(cat, context), timeout=300)
-                        queue.put(('Ryans', ryans_result))
-                        
-                        # Run Binary
-                        binary_result = await asyncio.wait_for(scrape_binary_catalog(cat, context), timeout=300)
-                        queue.put(('Binary', binary_result))
-                    except asyncio.TimeoutError:
-                        logger.warning(f"Dynamic scrapers timed out for {cat}")
-                    finally:
-                        await browser.close()
-
-            def run_static_streaming():
-                scrapers = [
-                    ('StarTech', scrape_startech_catalog),
-                    ('SkyLand', scrape_skyland_catalog),
-                    ('PcHouse', scrape_pchouse_catalog),
-                    ('UltraTech', scrape_ultratech_catalog),
-                    ('PotakaIT', scrape_potakait_catalog),
-                ]
-                
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    futures = {executor.submit(scraper, cat): name for name, scraper in scrapers}
-                    
-                    for future in futures:
-                        try:
-                            result = future.result()
-                            shop_name = futures[future]
-                            queue.put((shop_name, result))
-                        except Exception as e:
-                            logger.error(f"Error scraping {futures[future]}: {e}")
-
-            loop = asyncio.get_event_loop()
-            dynamic_task = run_dynamic()
-            static_task = loop.run_in_executor(None, run_static_streaming)
+        def run_all_scrapers_streaming(cat, queue):
+            # All scrapers are now synchronous (using cloudscraper for Ryans and Binary)
+            scrapers = [
+                ('StarTech', scrape_startech_catalog),
+                ('SkyLand', scrape_skyland_catalog),
+                ('PcHouse', scrape_pchouse_catalog),
+                ('UltraTech', scrape_ultratech_catalog),
+                ('PotakaIT', scrape_potakait_catalog),
+                ('Ryans', scrape_ryans_catalog),
+                ('Binary', scrape_binary_catalog),
+            ]
             
-            await asyncio.gather(dynamic_task, static_task)
+            with ThreadPoolExecutor(max_workers=7) as executor:
+                futures = {executor.submit(scraper, cat): name for name, scraper in scrapers}
+                
+                for future in futures:
+                    try:
+                        result = future.result()
+                        shop_name = futures[future]
+                        queue.put((shop_name, result))
+                    except Exception as e:
+                        logger.error(f"Error scraping {futures[future]}: {e}")
+        
+        run_all_scrapers_streaming(category, data_queue)
 
-        asyncio.run(gather_scrapers_streaming(category, data_queue))
-
-    @transaction.atomic
     def save_shop_products(self, shop_name, shop_data, category_name):
-        """Save products from a single shop"""
+        """Save products from a single shop with optimized bulk operations"""
         created_count = 0
         updated_count = 0
         
-        self.stdout.write(f'  Saving {shop_name} products...')
+        self.stdout.write(f'  Saving {shop_name} products ({len(shop_data.get("products", []))} items)...')
         
         category = Category.objects.filter(name__iexact=category_name).first()
-        price_histories_to_create = []
         
         try:
             shop = Shop.objects.get(name=shop_name)
@@ -187,67 +162,125 @@ class Command(BaseCommand):
             shop.logo_url = shop_data['logo']
             shop.save()
         
-        products = shop_data.get('products', [])
-        batch_size = 100
+        products_data = shop_data.get('products', [])
+        if not products_data:
+            return 0, 0
         
-        for i in range(0, len(products), batch_size):
-            batch = products[i:i + batch_size]
+        # Extract all product URLs for this batch
+        product_urls = [p.get('link', '') for p in products_data if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
+        
+        # Fetch existing products in one query
+        existing_products = {
+            p.product_url: p for p in Product.objects.filter(
+                shop=shop,
+                product_url__in=product_urls
+            ).select_related('category', 'shop')
+        }
+        
+        # Fetch latest price history for existing products in one query
+        existing_product_ids = list(existing_products.values())
+        latest_prices = {}
+        if existing_product_ids:
+            from django.db.models import Max
+            price_history_qs = PriceHistory.objects.filter(
+                product__in=existing_product_ids
+            ).values('product_id').annotate(latest_price=Max('price'))
+            latest_prices = {ph['product_id']: ph['latest_price'] for ph in price_history_qs}
+        
+        products_to_create = []
+        products_to_update = []
+        price_histories_to_create = []
+        now = timezone.now()
+        
+        for product_data in products_data:
+            price = product_data.get('price')
+            product_url = product_data.get('link', '')
             
-            for product_data in batch:
-                price = product_data.get('price')
-                product_url = product_data.get('link', '')
+            if not product_url or product_url in ['#', 'Link not found', '']:
+                continue
+            
+            if isinstance(price, str) or price == 0 or price is None:
+                stock_status = 'out_of_stock'
+                is_available = False
+                current_price = 0
+            else:
+                stock_status = 'in_stock' if product_data.get('in_stock', True) else 'out_of_stock'
+                is_available = True
+                current_price = price
+            
+            if product_url in existing_products:
+                # Update existing product
+                product = existing_products[product_url]
+                product.name = product_data.get('name', 'Unknown Product')[:500]
+                product.category = category
+                product.image_url = product_data.get('img', '')
+                product.current_price = current_price
+                product.stock_status = stock_status
+                product.is_available = is_available
+                product.last_scraped = now
+                products_to_update.append(product)
+                updated_count += 1
                 
-                if not product_url or product_url in ['#', 'Link not found', '']:
-                    continue
-                
-                if isinstance(price, str) or price == 0 or price is None:
-                    stock_status = 'out_of_stock'
-                    is_available = False
-                    current_price = 0
-                else:
-                    stock_status = 'in_stock' if product_data.get('in_stock', True) else 'out_of_stock'
-                    is_available = True
-                    current_price = price
-                
-                product, created = Product.objects.update_or_create(
+                # Check if price changed
+                latest_price = latest_prices.get(product.id)
+                if latest_price is None or float(latest_price) != float(current_price):
+                    price_histories_to_create.append(
+                        PriceHistory(
+                            product=product,
+                            price=current_price,
+                            stock_status=stock_status,
+                            recorded_at=now
+                        )
+                    )
+            else:
+                # Create new product
+                new_product = Product(
                     shop=shop,
                     product_url=product_url,
-                    defaults={
-                        'name': product_data.get('name', 'Unknown Product')[:500],
-                        'category': category,
-                        'image_url': product_data.get('img', ''),
-                        'current_price': current_price,
-                        'stock_status': stock_status,
-                        'is_available': is_available,
-                        'last_scraped': timezone.now(),
-                    }
+                    name=product_data.get('name', 'Unknown Product')[:500],
+                    category=category,
+                    image_url=product_data.get('img', ''),
+                    current_price=current_price,
+                    stock_status=stock_status,
+                    is_available=is_available,
+                    last_scraped=now
                 )
-                
-                if created:
-                    created_count += 1
-                else:
-                    updated_count += 1
-                
-                # Batch price history creation
-                latest_history = product.price_history.first()
-                if not latest_history or latest_history.price != product.current_price:
+                products_to_create.append(new_product)
+                created_count += 1
+        
+        # Bulk create new products
+        if products_to_create:
+            self.stdout.write(f'    Creating {len(products_to_create)} new products...')
+            created_products = Product.objects.bulk_create(
+                products_to_create, 
+                batch_size=500,
+                ignore_conflicts=True
+            )
+            # Add price history for new products
+            for product in created_products:
+                if product.pk:  # Only add history if product was actually created
                     price_histories_to_create.append(
                         PriceHistory(
                             product=product,
                             price=product.current_price,
                             stock_status=product.stock_status,
-                            recorded_at=timezone.now()
+                            recorded_at=now
                         )
                     )
-            
-            # Bulk create price histories every batch
-            if price_histories_to_create:
-                PriceHistory.objects.bulk_create(price_histories_to_create, batch_size=100)
-                price_histories_to_create = []
         
-        # Create remaining price histories
+        # Bulk update existing products
+        if products_to_update:
+            self.stdout.write(f'    Updating {len(products_to_update)} existing products...')
+            Product.objects.bulk_update(
+                products_to_update,
+                ['name', 'category', 'image_url', 'current_price', 'stock_status', 'is_available', 'last_scraped'],
+                batch_size=500
+            )
+        
+        # Bulk create price histories
         if price_histories_to_create:
-            PriceHistory.objects.bulk_create(price_histories_to_create, batch_size=100)
+            self.stdout.write(f'    Creating {len(price_histories_to_create)} price history records...')
+            PriceHistory.objects.bulk_create(price_histories_to_create, batch_size=500)
         
         self.stdout.write(f'    {shop_name}: {created_count} created, {updated_count} updated')
         return created_count, updated_count

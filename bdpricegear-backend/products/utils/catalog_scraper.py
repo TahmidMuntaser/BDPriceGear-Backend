@@ -12,6 +12,13 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("catalog_scraper")
 
+try:
+    import cloudscraper
+    CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    CLOUDSCRAPER_AVAILABLE = False
+    logger.warning("cloudscraper not installed. Ryans scraping may be limited. Install with: pip install cloudscraper")
+
 def normalize_price(text):
     """Extract and clean price values"""
     match = re.findall(r"[\d\.,]+", str(text))
@@ -102,8 +109,21 @@ def scrape_skyland_catalog(category):
             url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"SkyLand: Scraping page {page} for {category}")
             
-            response = requests.get(url, timeout=30)
-            soup = BeautifulSoup(response.text, "html.parser")
+            try:
+                response = requests.get(url, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+            except requests.exceptions.Timeout:
+                logger.warning(f"SkyLand: Timeout on page {page}, retrying once...")
+                try:
+                    response = requests.get(url, timeout=45)
+                    soup = BeautifulSoup(response.text, "html.parser")
+                except Exception as retry_err:
+                    logger.error(f"SkyLand: Retry failed on page {page}: {retry_err}")
+                    break
+            except Exception as e:
+                logger.error(f"SkyLand: Error on page {page}: {e}")
+                break
             
             if page == 1 and not logo:
                 logo_elem = soup.select_one("#logo img")
@@ -185,8 +205,21 @@ def scrape_pchouse_catalog(category):
             url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PcHouse: Scraping page {page} for {category}")
             
-            response = requests.get(url, headers=headers, timeout=30)
-            soup = BeautifulSoup(response.text, "html.parser")
+            try:
+                response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+            except requests.exceptions.Timeout:
+                logger.warning(f"PcHouse: Timeout on page {page}, retrying once...")
+                try:
+                    response = requests.get(url, headers=headers, timeout=45)
+                    soup = BeautifulSoup(response.text, "html.parser")
+                except Exception as retry_err:
+                    logger.error(f"PcHouse: Retry failed on page {page}: {retry_err}")
+                    break
+            except Exception as e:
+                logger.error(f"PcHouse: Error on page {page}: {e}")
+                break
             
             items = soup.select(".single-product-item")
             if not items:
@@ -335,50 +368,76 @@ def scrape_potakait_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# Ryans - Scrape all pages with Playwright
-async def scrape_ryans_catalog(category, context):
-    """Scrape all pages from Ryans for a category"""
-    results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
-    page_obj = None
+# Ryans - Scrape all pages with cloudscraper (Cloudflare bypass)
+def scrape_ryans_catalog(category):
+    """Scrape all pages from Ryans for a category using cloudscraper"""
+    
+    if not CLOUDSCRAPER_AVAILABLE:
+        logger.error("Ryans: cloudscraper not available. Install with: pip install cloudscraper")
+        return {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
+    
+    results = {
+        "products": [],
+        "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"
+    }
     
     try:
+        # Create scraper instance (handles Cloudflare automatically)
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            },
+            delay=10  # Delay before solving challenge
+        )
+        
         base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
-        page_obj = await context.new_page()
-        
-        await page_obj.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-        """)
-        
         page_num = 1
         max_pages = 50
         consecutive_empty = 0
         
         while page_num <= max_pages:
-            url = f"{base_url}&page={page_num}"
+            url = f"{base_url}&limit=30&page={page_num}"
             logger.info(f"Ryans: Scraping page {page_num} for {category}")
             
             try:
-                await page_obj.goto(url, timeout=40000, wait_until="load")
-                await asyncio.sleep(1.5)
-                await page_obj.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-                await asyncio.sleep(0.5)
+                # cloudscraper automatically handles Cloudflare challenges
+                response = scraper.get(url, timeout=30)
                 
-                soup = BeautifulSoup(await page_obj.content(), "html.parser")
+                if response.status_code == 403:
+                    logger.warning(f"Ryans: Page {page_num} returned 403, waiting 10s...")
+                    time.sleep(10)
+                    response = scraper.get(url, timeout=30)
+                
+                if response.status_code != 200:
+                    logger.error(f"Ryans: Page {page_num} failed with status {response.status_code}")
+                    break
+                
+                # Parse HTML
+                soup = BeautifulSoup(response.text, "html.parser")
+                
+                # Check for Cloudflare challenge page
+                if "just a moment" in response.text.lower() or "checking your browser" in response.text.lower():
+                    logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, stopping")
+                    break
+                
                 items = soup.select(".category-single-product")
                 
                 if not items:
                     consecutive_empty += 1
+                    logger.info(f"Ryans: No products on page {page_num}, consecutive empty: {consecutive_empty}")
                     if consecutive_empty >= 2:
-                        logger.info(f"Ryans: No more products found, stopping at page {page_num}")
+                        logger.info(f"Ryans: Stopping at page {page_num}")
                         break
                     page_num += 1
-                    await asyncio.sleep(1)
+                    time.sleep(2)
                     continue
                 
                 consecutive_empty = 0
+                logger.info(f"Ryans: Found {len(items)} products on page {page_num}")
                 
+                # Extract product data
                 for item in items:
                     name_elem = item.select_one(".card-body .card-text a")
                     price_elem = item.select_one(".pr-text")
@@ -387,28 +446,28 @@ async def scrape_ryans_catalog(category, context):
                     
                     if name_elem:
                         product_name = name_elem.get_text(strip=True)
-                        product_link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else ""
+                        product_link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else "#"
                         product_price = normalize_price(price_elem.get_text(strip=True)) if price_elem else "Out of Stock"
                         product_img = img_elem["src"] if img_elem and img_elem.has_attr("src") else ""
                         
                         if product_img and not product_img.startswith(('http://', 'https://')):
                             product_img = urllib.parse.urljoin(url, product_img)
                         
-                        if product_link:
-                            results["products"].append({
-                                "id": str(uuid.uuid4()),
-                                "name": product_name,
-                                "price": product_price,
-                                "link": product_link,
-                                "img": product_img,
-                                "in_stock": True
-                            })
+                        results["products"].append({
+                            "id": str(uuid.uuid4()),
+                            "name": product_name,
+                            "price": product_price,
+                            "link": product_link,
+                            "img": product_img,
+                            "in_stock": True
+                        })
                 
                 page_num += 1
-                await asyncio.sleep(0.5)
+                # Delay between pages to avoid rate limiting
+                time.sleep(3)
                 
-            except PlaywrightTimeout:
-                logger.warning(f"Ryans: Timeout at page {page_num}")
+            except Exception as e:
+                logger.error(f"Ryans: Error on page {page_num}: {e}")
                 break
         
         logger.info(f"Ryans: Total scraped {len(results['products'])} products for {category}")
@@ -417,33 +476,52 @@ async def scrape_ryans_catalog(category, context):
     except Exception as e:
         logger.error(f"Ryans catalog error: {e}")
         return results
-    finally:
-        if page_obj:
-            await page_obj.close()
 
 
-# Binary Logic - Scrape all pages with Playwright
-async def scrape_binary_catalog(category, context):
-    """Scrape all pages from Binary Logic for a category"""
-    results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
-    page_obj = None
+# Binary Logic - Scrape all pages with cloudscraper
+def scrape_binary_catalog(category):
+    """Scrape all pages from Binary Logic for a category using cloudscraper"""
+    
+    if not CLOUDSCRAPER_AVAILABLE:
+        logger.error("Binary: cloudscraper not available. Install with: pip install cloudscraper")
+        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+    
+    results = {
+        "products": [],
+        "logo": "https://www.binarylogic.com.bd/images/logo.png"
+    }
     
     try:
-        page_obj = await context.new_page()
+        # Create scraper instance
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+            }
+        )
+        
         page_num = 1
         max_pages = 50
         consecutive_empty = 0
         
         while page_num <= max_pages:
-            url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(category)}?page={page_num}"
+            # Binary Logic uses /search/{query} format
+            if page_num == 1:
+                url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(category)}"
+            else:
+                url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(category)}?page={page_num}"
+            
             logger.info(f"Binary: Scraping page {page_num} for {category}")
             
             try:
-                await page_obj.goto(url, timeout=40000, wait_until="domcontentloaded")
-                await page_obj.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-                await asyncio.sleep(0.5)
+                response = scraper.get(url, timeout=30)
                 
-                soup = BeautifulSoup(await page_obj.content(), "html.parser")
+                if response.status_code != 200:
+                    logger.error(f"Binary: Page {page_num} failed with status {response.status_code}")
+                    break
+                
+                soup = BeautifulSoup(response.text, "html.parser")
                 items = soup.select(".single_product")
                 
                 if not items:
@@ -452,10 +530,11 @@ async def scrape_binary_catalog(category, context):
                         logger.info(f"Binary: No more products found, stopping at page {page_num}")
                         break
                     page_num += 1
-                    await asyncio.sleep(0.5)
+                    time.sleep(1)
                     continue
                 
                 consecutive_empty = 0
+                logger.info(f"Binary: Found {len(items)} products on page {page_num}")
                 
                 for item in items:
                     name_elem = item.select_one(".p-item-name")
@@ -463,21 +542,21 @@ async def scrape_binary_catalog(category, context):
                     img_elem = item.select_one(".p-item-img img")
                     link_elem = item.select_one(".p-item-img a")
                     
-                    if name_elem and link_elem:
+                    if name_elem:
                         results["products"].append({
                             "id": str(uuid.uuid4()),
                             "name": name_elem.get_text(strip=True),
                             "price": normalize_price(price_elem.get_text(strip=True) if price_elem else "0"),
-                            "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "",
+                            "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
                             "img": urllib.parse.urljoin(url, img_elem["src"]) if img_elem else "",
                             "in_stock": True
                         })
                 
                 page_num += 1
-                await asyncio.sleep(0.5)
+                time.sleep(1)
                 
-            except PlaywrightTimeout:
-                logger.warning(f"Binary: Timeout at page {page_num}")
+            except Exception as e:
+                logger.error(f"Binary: Error on page {page_num}: {e}")
                 break
         
         logger.info(f"Binary: Total scraped {len(results['products'])} products for {category}")
@@ -486,6 +565,3 @@ async def scrape_binary_catalog(category, context):
     except Exception as e:
         logger.error(f"Binary catalog error: {e}")
         return results
-    finally:
-        if page_obj:
-            await page_obj.close()
