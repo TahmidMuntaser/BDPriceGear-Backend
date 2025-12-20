@@ -1,20 +1,19 @@
-name: Hourly Product Scraping
+name: Hourly Catalog Update
 
 on:
   schedule:
-    # Runs every hour at minute 0
-    - cron: '0 * * * *'
-  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
+    - cron: '0 */2 * * *'  # Every 2 hours
+  workflow_dispatch:
 
 jobs:
-  trigger-scraping:
+  trigger-catalog-update:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Trigger Product Update
+      - name: Trigger Catalog Update
         run: |
-          echo "Triggering product update at $(date)"
-          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+          echo "Triggering catalog update at $(date)"
+          curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
             -w "\nHTTP Status: %{http_code}\n"
-          echo "Update triggered successfully!"
+          echo "Catalog update triggered successfully!"

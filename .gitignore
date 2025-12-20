@@ -209,3 +209,4 @@ __marimo__/
 
 .env
 staticfiles/
+COMPLETE_TESTING_GUIDE.txt

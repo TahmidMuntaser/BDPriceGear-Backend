@@ -1,0 +1,19 @@
+name: Biannual Product Cleanup
+
+on:
+  schedule:
+    - cron: '0 3 1 */6 *'
+  workflow_dispatch:
+
+jobs:
+  cleanup-old-products:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Cleanup Old Products
+        run: |
+          echo "Triggering product cleanup at $(date)"
+          curl -X POST https://bdpricegear.onrender.com/api/cleanup/products/ \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP Status: %{http_code}\n"
+          echo "Product cleanup completed successfully!"
