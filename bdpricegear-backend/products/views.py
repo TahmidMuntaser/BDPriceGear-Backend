@@ -1,4 +1,4 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, throttle_classes
 from rest_framework.response import Response
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
+from .throttles import PriceComparisonThrottle, UpdateThrottle
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
@@ -42,10 +43,12 @@ logger = logging.getLogger("products.views")
     operation_description="Compare product prices across multiple Bangladeshi tech shops",
     responses={
         200: "List of shops with products and prices",
-        400: "Missing product query parameter"
+        400: "Missing product query parameter",
+        429: "Rate limit exceeded - max 20 requests per hour"
     }
 )
 @api_view(['GET', 'HEAD', 'OPTIONS'])
+@throttle_classes([PriceComparisonThrottle])
 def price_comparison(request):
     
     # Handle CORS preflight requests
@@ -173,9 +176,9 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Return all products by default, including out-of-stock and zero-price."""
+        """Return all products by default. Filter by availability using query params."""
         queryset = super().get_queryset()
-        # If user explicitly requests only available products, filter them
+        # Filter by availability if requested
         only_available = self.request.query_params.get('only_available', 'false').lower() == 'true'
         if only_available:
             queryset = queryset.filter(is_available=True)
@@ -381,6 +384,7 @@ def health_check(request):
     try:
         # Check database and get last update time
         with connection.cursor() as cursor:
+            # Count all products to match API endpoints
             cursor.execute("SELECT COUNT(*) FROM products_product")
             product_count = cursor.fetchone()[0]
             
@@ -411,11 +415,13 @@ def health_check(request):
 
 
 @api_view(['POST', 'GET'])
+@throttle_classes([UpdateThrottle])
 def trigger_update(request):
     """
     Manually trigger product update
     POST /api/products/update/ - Trigger immediate update (async)
     GET /api/products/update/status/ - Check last update time
+    Rate limited: 5 requests per day
     """
     from django.core.management import call_command
     from django.core.cache import cache
