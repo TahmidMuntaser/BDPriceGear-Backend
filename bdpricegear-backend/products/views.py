@@ -7,6 +7,8 @@ from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 from .throttles import PriceComparisonThrottle, UpdateThrottle
 from .utils.cache_manager import price_cache
@@ -585,6 +587,7 @@ def cleanup_old_data(request):
 
 
 @api_view(['POST', 'GET'])
+@csrf_exempt
 @api_view(['POST', 'GET'])
 def trigger_catalog_update(request):
     """

@@ -2,23 +2,18 @@ name: Hourly Catalog Update
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Every 2 hours at minute 0 (00:00, 02:00, 04:00, etc. UTC)
+    - cron: '0 */2 * * *'  # Every 2 hours
   workflow_dispatch:
 
 jobs:
   trigger-catalog-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
     
     steps:
-      - name: Trigger Update
+      - name: Trigger Catalog Update
         run: |
           echo "Triggering catalog update at $(date)"
-          
           curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
-            --max-time 25 \
-            --fail-with-body \
-            -v
-          
-          echo "Update triggered successfully at $(date)"
+            -w "\nHTTP Status: %{http_code}\n"
+          echo "Catalog update triggered successfully!"
