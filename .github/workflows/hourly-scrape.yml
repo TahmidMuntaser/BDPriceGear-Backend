@@ -13,7 +13,18 @@ jobs:
       - name: Trigger Catalog Update
         run: |
           echo "Triggering catalog update at $(date)"
+          
+          # Note: The /api/catalog/update/ endpoint is disabled on production
+          # to prevent Gunicorn worker timeouts. This workflow is kept for 
+          # documentation purposes.
+          
+          # For Render, you should:
+          # 1. Use a Background Worker (paid plan) OR
+          # 2. Use Render Cron Jobs (separate service) OR
+          # 3. Manually SSH and run: python manage.py populate_catalog
+          
           curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-          echo "Catalog update triggered successfully!"
+            -w "\nHTTP Status: %{http_code}\n" || true
+          
+          echo "Note: API endpoint is disabled. See workflow comments for alternatives."

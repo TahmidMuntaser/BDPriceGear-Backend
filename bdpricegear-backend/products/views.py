@@ -583,20 +583,26 @@ def cleanup_old_data(request):
 def trigger_catalog_update(request):
     """
     Trigger catalog update (scrapes all pages from all websites)
-    POST /api/catalog/update/ - Trigger full catalog scrape
+    POST /api/catalog/update/ - Trigger full catalog scrape (NOT RECOMMENDED - use GitHub Actions)
     GET /api/catalog/update/ - Check catalog update status
+    
+    WARNING: This endpoint is disabled on production to prevent worker timeouts.
+    Use GitHub Actions workflow instead for scheduled updates.
     """
     from django.core.management import call_command
     from django.core.cache import cache
     from django.db import connection
-    import threading
+    import os
     
+    # Check if running on Render
+    is_production = os.environ.get('RENDER', False) or not DEBUG
     catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
     
     if request.method == 'GET':
         from zoneinfo import ZoneInfo
         
         last_catalog_update = 'Never updated'
+        last_error = cache.get('last_catalog_error', None)
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT MAX(updated_at) FROM products_product")
@@ -608,7 +614,7 @@ def trigger_catalog_update(request):
         except Exception:
             pass
 
-        return Response({
+        response_data = {
             "status": "ready",
             "message": "POST to trigger full catalog update",
             "last_catalog_update": last_catalog_update,
@@ -616,7 +622,12 @@ def trigger_catalog_update(request):
             "endpoint": "/api/catalog/update/",
             "method": "POST",
             "note": "This scrapes all pages from all websites (takes longer)"
-        })
+        }
+        
+        if last_error:
+            response_data["last_error"] = last_error
+            
+        return Response(response_data)
     
     if catalog_update_in_progress:
         from zoneinfo import ZoneInfo
@@ -637,35 +648,59 @@ def trigger_catalog_update(request):
             "last_catalog_update": last_catalog_update
         }, status=200)
     
+    # Prevent long-running tasks on production (Render) to avoid worker timeouts
+    if is_production:
+        return Response({
+            "status": "disabled",
+            "message": "Catalog update via API is disabled on production to prevent worker timeouts",
+            "reason": "Long-running scraping tasks block Gunicorn workers causing timeouts",
+            "recommendation": "Use GitHub Actions workflow for scheduled updates",
+            "github_actions": "Hourly updates run automatically via .github/workflows/hourly-scrape.yml",
+            "manual_trigger": "Trigger GitHub Actions manually from the Actions tab",
+            "local_only": "This endpoint only works on local development (DEBUG=True)"
+        }, status=503)
+    
+    # Only allow on local development
     def run_catalog_update():
+        import sys
         try:
             cache.set('catalog_update_in_progress', True, timeout=7200)
-            logger.info("Full catalog update triggered via API")
+            logger.info("="*80)
+            logger.info("CATALOG UPDATE STARTED VIA API (LOCAL DEVELOPMENT ONLY)")
+            logger.info("="*80)
             
             # Get categories from query parameter
             categories = request.GET.get('categories', '')
             if categories:
                 category_list = [c.strip() for c in categories.split(',')]
+                logger.info(f"Updating categories: {category_list}")
                 call_command('populate_catalog', categories=category_list)
             else:
+                logger.info("Updating all default categories")
                 call_command('populate_catalog')
             
             cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
             cache.delete('catalog_update_in_progress')
-            logger.info("Catalog update completed")
+            logger.info("="*80)
+            logger.info("CATALOG UPDATE COMPLETED SUCCESSFULLY")
+            logger.info("="*80)
         except Exception as e:
-            logger.error(f"Catalog update failed: {str(e)}")
+            error_msg = f"Catalog update failed: {str(e)}"
+            logger.error("="*80)
+            logger.error(error_msg)
+            logger.error("="*80)
             cache.delete('catalog_update_in_progress')
+            cache.set('last_catalog_error', error_msg, timeout=3600)
     
-    thread = threading.Thread(target=run_catalog_update, daemon=True)
-    thread.start()
+    # Run synchronously on local development
+    run_catalog_update()
     
     return Response({
-        "status": "started",
-        "message": "Full catalog update started in background",
+        "status": "completed",
+        "message": "Catalog update completed (local development only)",
         "timestamp": timezone.now().isoformat(),
-        "note": "Scraping all pages from all websites. Check GET /api/catalog/update/ for status"
-    }, status=202)
+        "note": "This endpoint is disabled on production. Use GitHub Actions for scheduled updates."
+    }, status=200)
 
 
 @api_view(['POST', 'GET'])
