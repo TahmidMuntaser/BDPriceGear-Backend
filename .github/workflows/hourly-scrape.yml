@@ -8,7 +8,7 @@ on:
 jobs:
   trigger-catalog-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Allow 30 minutes for the scraping to complete
+    timeout-minutes: 5  # Just trigger, don't wait for completion
     
     steps:
       - name: Display Current Time
@@ -19,11 +19,11 @@ jobs:
       - name: Trigger Catalog Update
         run: |
           echo "Sending POST request to catalog update endpoint..."
-          echo "Note: This may take 5-15 minutes as it scrapes all websites..."
+          echo "Note: This triggers background scraping, response should be immediate..."
           
           RESPONSE=$(curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
-            --max-time 1800 \
+            --max-time 30 \
             -w "\nHTTP_STATUS:%{http_code}" \
             -s)
           
@@ -31,12 +31,14 @@ jobs:
           RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/HTTP_STATUS:[0-9]*$//')
           
           echo "Response Body:"
-          echo "$RESPONSE_BODY"
+          echo "$RESPONSE_BODY" | python3 -m json.tool || echo "$RESPONSE_BODY"
           echo ""
           echo "HTTP Status: $HTTP_STATUS"
           
-          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "Catalog update completed successfully!"
+          # Accept 202 (Accepted) for background jobs or 200 for success
+          if [ "$HTTP_STATUS" = "202" ] || [ "$HTTP_STATUS" = "200" ]; then
+            echo "Catalog update triggered successfully!"
+            echo "Background scraping is now running on the server."
             exit 0
           else
             echo "Failed to trigger catalog update (HTTP $HTTP_STATUS)"
@@ -47,3 +49,4 @@ jobs:
         if: always()
         run: |
           echo "Completed at: $(date)"
+          echo "Check https://bdpricegear.onrender.com/api/health/ for update status"

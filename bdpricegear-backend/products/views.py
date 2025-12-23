@@ -589,90 +589,100 @@ def cleanup_old_data(request):
 def trigger_catalog_update(request):
     """
     Trigger catalog update (scrapes all pages from all websites)
-    POST /api/catalog/update/ - Trigger full catalog scrape
+    POST /api/catalog/update/ - Trigger full catalog scrape (runs in background)
     GET /api/catalog/update/ - Check catalog update status
     
-    NOTE: This runs synchronously to avoid issues with Render free tier timeouts.
-    For large updates, consider using a background job service.
+    NOTE: Runs in background thread for Render compatibility
     """
-    from django.core.management import call_command
-    from django.core.cache import cache
-    from django.db import connection
-    from zoneinfo import ZoneInfo
-    
-    catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
-    
-    if request.method == 'GET':
-        last_catalog_update = 'Never updated'
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT MAX(updated_at) FROM products_product")
-                last_updated = cursor.fetchone()[0]
-                
-                if last_updated:
-                    dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
-                    last_catalog_update = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
-        except Exception:
-            pass
-
-        return Response({
-            "status": "ready",
-            "message": "POST to trigger full catalog update",
-            "last_catalog_update": last_catalog_update,
-            "catalog_update_in_progress": catalog_update_in_progress,
-            "endpoint": "/api/catalog/update/",
-            "method": "POST",
-            "note": "This scrapes all pages from all websites (takes longer)"
-        })
-    
-    # Check if already running
-    if catalog_update_in_progress:
-        return Response({
-            "status": "already_running",
-            "message": "Catalog update already in progress",
-        }, status=409)
-    
-    # Run update synchronously (better for Render free tier)
     try:
+        from django.core.management import call_command
+        from django.core.cache import cache
+        from django.db import connection
+        import threading
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            # Fallback for systems without zoneinfo
+            import pytz
+            ZoneInfo = lambda tz: pytz.timezone(tz)
+        
+        catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
+        
+        if request.method == 'GET':
+            last_catalog_update = 'Never updated'
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT MAX(updated_at) FROM products_product")
+                    last_updated = cursor.fetchone()[0]
+                    
+                    if last_updated:
+                        dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
+                        last_catalog_update = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+            except Exception as e:
+                logger.error(f"Error getting last update time: {e}")
+
+            return Response({
+                "status": "ready",
+                "message": "POST to trigger full catalog update",
+                "last_catalog_update": last_catalog_update,
+                "catalog_update_in_progress": catalog_update_in_progress,
+                "endpoint": "/api/catalog/update/",
+                "method": "POST",
+                "note": "This scrapes all pages from all websites (runs in background)"
+            })
+        
+        # Check if already running
+        if catalog_update_in_progress:
+            return Response({
+                "status": "already_running",
+                "message": "Catalog update already in progress",
+            }, status=409)
+        
+        # Run update in background thread
+        def run_catalog_update():
+            try:
+                logger.info("Full catalog update started in background")
+                start_time = timezone.now()
+                
+                # Get categories - use default if not specified
+                call_command('populate_catalog')
+                
+                end_time = timezone.now()
+                duration = (end_time - start_time).total_seconds()
+                
+                cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
+                cache.set('last_catalog_duration', duration, timeout=None)
+                cache.delete('catalog_update_in_progress')
+                
+                logger.info(f"Catalog update completed in {duration} seconds")
+                
+            except Exception as e:
+                cache.delete('catalog_update_in_progress')
+                logger.error(f"Catalog update failed in background: {str(e)}", exc_info=True)
+        
+        # Set flag before starting thread
         cache.set('catalog_update_in_progress', True, timeout=7200)
-        logger.info("Full catalog update triggered via API")
         
-        start_time = timezone.now()
-        
-        # Get categories from query parameter
-        categories = request.GET.get('categories', '')
-        if categories:
-            category_list = [c.strip() for c in categories.split(',')]
-            call_command('populate_catalog', categories=category_list)
-        else:
-            # Run with default categories
-            call_command('populate_catalog')
-        
-        end_time = timezone.now()
-        duration = (end_time - start_time).total_seconds()
-        
-        cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
-        cache.delete('catalog_update_in_progress')
-        
-        logger.info(f"Catalog update completed in {duration} seconds")
+        # Start background thread
+        thread = threading.Thread(target=run_catalog_update)
+        thread.daemon = False  # Non-daemon so it continues even if request ends
+        thread.start()
         
         return Response({
-            "status": "completed",
-            "message": "Full catalog update completed successfully",
-            "started_at": start_time.isoformat(),
-            "completed_at": end_time.isoformat(),
-            "duration_seconds": round(duration, 2),
-            "note": "Database has been updated with latest products"
-        }, status=200)
-        
+            "status": "started",
+            "message": "Full catalog update started in background",
+            "timestamp": timezone.now().isoformat(),
+            "note": "Scraping all pages from all websites. Check GET /api/catalog/update/ for status",
+            "check_status_url": "/api/catalog/update/"
+        }, status=202)
+    
     except Exception as e:
-        cache.delete('catalog_update_in_progress')
-        logger.error(f"Catalog update failed: {str(e)}")
-        
+        # Catch any initialization errors
+        logger.error(f"Fatal error in trigger_catalog_update: {str(e)}", exc_info=True)
         return Response({
-            "status": "failed",
-            "message": f"Catalog update failed: {str(e)}",
-            "timestamp": timezone.now().isoformat()
+            "status": "error",
+            "message": f"Server error: {str(e)}",
+            "error_type": type(e).__name__
         }, status=500)
 
 
