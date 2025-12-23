@@ -11,7 +11,8 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'description', 'is_active', 'product_count', 'created_at']
     
     def get_product_count(self, obj):
-        return obj.products.filter(is_available=True).count()
+        # Count all products in this category (including unavailable)
+        return obj.products.count()
 
 
 class ShopSerializer(serializers.ModelSerializer):
@@ -23,7 +24,8 @@ class ShopSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'slug', 'logo_url', 'website_url', 'is_active', 'priority', 'product_count']
     
     def get_product_count(self, obj):
-        return obj.products.filter(is_available=True).count()
+        # Count all products in this shop (including unavailable)
+        return obj.products.count()
 
 
 class PriceHistorySerializer(serializers.ModelSerializer):

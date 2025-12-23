@@ -173,9 +173,9 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     
     def get_queryset(self):
-        """Return all products by default. Filter by availability using query params."""
+        """Return all products by default, including unavailable ones."""
         queryset = super().get_queryset()
-        # Filter by availability if requested
+        # Optionally filter to show only available products
         only_available = self.request.query_params.get('only_available', 'false').lower() == 'true'
         if only_available:
             queryset = queryset.filter(is_available=True)
@@ -381,7 +381,7 @@ def health_check(request):
     try:
         # Check database and get last update time
         with connection.cursor() as cursor:
-            # Count all products to match API endpoints
+            # Count all products (including unavailable)
             cursor.execute("SELECT COUNT(*) FROM products_product")
             product_count = cursor.fetchone()[0]
             
