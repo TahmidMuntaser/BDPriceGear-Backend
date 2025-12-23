@@ -2,18 +2,48 @@ name: Hourly Catalog Update
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Every 2 hours
-  workflow_dispatch:
+    - cron: '0 */2 * * *'  # Every 2 hours (at :00 minutes)
+  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
 
 jobs:
   trigger-catalog-update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # Allow 30 minutes for the scraping to complete
     
     steps:
+      - name: Display Current Time
+        run: |
+          echo "Workflow triggered at: $(date)"
+          echo "Timezone: $(date +%Z)"
+          
       - name: Trigger Catalog Update
         run: |
-          echo "Triggering catalog update at $(date)"
-          curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
+          echo "Sending POST request to catalog update endpoint..."
+          echo "Note: This may take 5-15 minutes as it scrapes all websites..."
+          
+          RESPONSE=$(curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-          echo "Catalog update triggered successfully!"
+            --max-time 1800 \
+            -w "\nHTTP_STATUS:%{http_code}" \
+            -s)
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -oP 'HTTP_STATUS:\K\d+')
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/HTTP_STATUS:[0-9]*$//')
+          
+          echo "Response Body:"
+          echo "$RESPONSE_BODY"
+          echo ""
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Catalog update completed successfully!"
+            exit 0
+          else
+            echo "Failed to trigger catalog update (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+      
+      - name: Workflow Summary
+        if: always()
+        run: |
+          echo "Completed at: $(date)"
