@@ -591,33 +591,31 @@ def trigger_catalog_update(request):
     Trigger catalog update (scrapes all pages from all websites)
     POST /api/catalog/update/ - Trigger full catalog scrape (runs in background)
     GET /api/catalog/update/ - Check catalog update status
-    
-    NOTE: Runs in background thread for Render compatibility
     """
+    import traceback
+    import sys
+    
+    logger.info(f"trigger_catalog_update called with method: {request.method}")
+    
     try:
         from django.core.management import call_command
         from django.core.cache import cache
         from django.db import connection
         import threading
-        try:
-            from zoneinfo import ZoneInfo
-        except ImportError:
-            # Fallback for systems without zoneinfo
-            import pytz
-            ZoneInfo = lambda tz: pytz.timezone(tz)
         
-        catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
+        logger.info("Imports successful")
+        
+        # Simple timezone handling
+        last_catalog_update = 'Never updated'
         
         if request.method == 'GET':
-            last_catalog_update = 'Never updated'
             try:
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT MAX(updated_at) FROM products_product")
                     last_updated = cursor.fetchone()[0]
                     
                     if last_updated:
-                        dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
-                        last_catalog_update = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
+                        last_catalog_update = last_updated.strftime('%Y-%m-%d %I:%M %p UTC')
             except Exception as e:
                 logger.error(f"Error getting last update time: {e}")
 
@@ -625,64 +623,61 @@ def trigger_catalog_update(request):
                 "status": "ready",
                 "message": "POST to trigger full catalog update",
                 "last_catalog_update": last_catalog_update,
-                "catalog_update_in_progress": catalog_update_in_progress,
                 "endpoint": "/api/catalog/update/",
-                "method": "POST",
-                "note": "This scrapes all pages from all websites (runs in background)"
+                "method": "POST"
             })
         
-        # Check if already running
-        if catalog_update_in_progress:
-            return Response({
-                "status": "already_running",
-                "message": "Catalog update already in progress",
-            }, status=409)
+        logger.info("POST request received, starting background update")
         
         # Run update in background thread
         def run_catalog_update():
             try:
-                logger.info("Full catalog update started in background")
+                logger.info("Background thread started")
                 start_time = timezone.now()
                 
-                # Get categories - use default if not specified
+                # Run the populate_catalog command
                 call_command('populate_catalog')
                 
                 end_time = timezone.now()
                 duration = (end_time - start_time).total_seconds()
                 
-                cache.set('last_catalog_update', timezone.now().isoformat(), timeout=None)
-                cache.set('last_catalog_duration', duration, timeout=None)
-                cache.delete('catalog_update_in_progress')
-                
                 logger.info(f"Catalog update completed in {duration} seconds")
                 
             except Exception as e:
-                cache.delete('catalog_update_in_progress')
-                logger.error(f"Catalog update failed in background: {str(e)}", exc_info=True)
-        
-        # Set flag before starting thread
-        cache.set('catalog_update_in_progress', True, timeout=7200)
+                error_msg = f"Catalog update failed: {str(e)}"
+                error_trace = traceback.format_exc()
+                logger.error(f"{error_msg}\n{error_trace}")
         
         # Start background thread
-        thread = threading.Thread(target=run_catalog_update)
-        thread.daemon = False  # Non-daemon so it continues even if request ends
+        thread = threading.Thread(target=run_catalog_update, name="CatalogUpdateThread")
+        thread.daemon = False
         thread.start()
+        
+        logger.info("Background thread started successfully")
         
         return Response({
             "status": "started",
             "message": "Full catalog update started in background",
             "timestamp": timezone.now().isoformat(),
-            "note": "Scraping all pages from all websites. Check GET /api/catalog/update/ for status",
-            "check_status_url": "/api/catalog/update/"
+            "note": "Scraping all pages from all websites in background"
         }, status=202)
     
     except Exception as e:
-        # Catch any initialization errors
-        logger.error(f"Fatal error in trigger_catalog_update: {str(e)}", exc_info=True)
+        # Catch any errors and log them
+        error_trace = traceback.format_exc()
+        error_msg = f"Fatal error in trigger_catalog_update: {str(e)}"
+        
+        logger.error(f"{error_msg}\n{error_trace}")
+        
+        # Print to stderr as well for Render logs
+        print(f"ERROR: {error_msg}", file=sys.stderr)
+        print(error_trace, file=sys.stderr)
+        
         return Response({
             "status": "error",
-            "message": f"Server error: {str(e)}",
-            "error_type": type(e).__name__
+            "message": str(e),
+            "error_type": type(e).__name__,
+            "traceback": error_trace.split('\n')[-5:]  # Last 5 lines
         }, status=500)
 
 

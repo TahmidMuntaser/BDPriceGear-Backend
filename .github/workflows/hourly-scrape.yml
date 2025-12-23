@@ -2,51 +2,23 @@ name: Hourly Catalog Update
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Every 2 hours (at :00 minutes)
-  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
+    - cron: '0 */2 * * *'  # Every 2 hours at minute 0 (00:00, 02:00, 04:00, etc. UTC)
+  workflow_dispatch:
 
 jobs:
   trigger-catalog-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # Just trigger, don't wait for completion
+    timeout-minutes: 3
     
     steps:
-      - name: Display Current Time
+      - name: Trigger Update
         run: |
-          echo "Workflow triggered at: $(date)"
-          echo "Timezone: $(date +%Z)"
+          echo "Triggering catalog update at $(date)"
           
-      - name: Trigger Catalog Update
-        run: |
-          echo "Sending POST request to catalog update endpoint..."
-          echo "Note: This triggers background scraping, response should be immediate..."
-          
-          RESPONSE=$(curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
+          curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
             -H "Content-Type: application/json" \
-            --max-time 30 \
-            -w "\nHTTP_STATUS:%{http_code}" \
-            -s)
+            --max-time 25 \
+            --fail-with-body \
+            -v
           
-          HTTP_STATUS=$(echo "$RESPONSE" | grep -oP 'HTTP_STATUS:\K\d+')
-          RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/HTTP_STATUS:[0-9]*$//')
-          
-          echo "Response Body:"
-          echo "$RESPONSE_BODY" | python3 -m json.tool || echo "$RESPONSE_BODY"
-          echo ""
-          echo "HTTP Status: $HTTP_STATUS"
-          
-          # Accept 202 (Accepted) for background jobs or 200 for success
-          if [ "$HTTP_STATUS" = "202" ] || [ "$HTTP_STATUS" = "200" ]; then
-            echo "Catalog update triggered successfully!"
-            echo "Background scraping is now running on the server."
-            exit 0
-          else
-            echo "Failed to trigger catalog update (HTTP $HTTP_STATUS)"
-            exit 1
-          fi
-      
-      - name: Workflow Summary
-        if: always()
-        run: |
-          echo "Completed at: $(date)"
-          echo "Check https://bdpricegear.onrender.com/api/health/ for update status"
+          echo "Update triggered successfully at $(date)"
