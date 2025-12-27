@@ -475,8 +475,8 @@ def trigger_update(request):
         """Run update in background thread"""
         try:
             cache.set('update_in_progress', True, timeout=3600)  # 1 hour timeout
-            logger.info("🔄 Manual update triggered via API")
-            call_command('populate_products')  # Scrape all available products
+            logger.info("🔄 Manual catalog update triggered via API")
+            call_command('populate_catalog')  # Scrape all products from catalog pages
             
             # Store update timestamp
             cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
