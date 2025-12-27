@@ -32,23 +32,22 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting catalog population...'))
-        
+
         categories_created = self.create_categories(options['categories'])
         self.stdout.write(self.style.SUCCESS(f'Categories ready: {categories_created}'))
-        
+
         shops_created = self.create_shops()
         self.stdout.write(self.style.SUCCESS(f'Shops ready: {shops_created}'))
-        
+
         total_created = 0
         total_updated = 0
-        
+
         for category in options['categories']:
             self.stdout.write(f'\nScraping category: {category}')
-            
+
             # Queue for passing scraped data from scraper to saver
             data_queue = queue.Queue()
-            save_thread = None
-            
+
             def save_worker():
                 nonlocal total_created, total_updated
                 while True:
@@ -56,23 +55,34 @@ class Command(BaseCommand):
                     if item is None:  # Sentinel to stop
                         break
                     shop_name, shop_data = item
-                    created, updated = self.save_shop_products(shop_name, shop_data, category)
-                    total_created += created
-                    total_updated += updated
+                    # Retry logic for saving products
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            created, updated = self.save_shop_products(shop_name, shop_data, category)
+                            total_created += created
+                            total_updated += updated
+                            break
+                        except Exception as e:
+                            logger.error(f"Error saving products for {shop_name} ({category}), attempt {attempt+1}: {e}")
+                            if attempt < max_retries - 1:
+                                import time; time.sleep(2 * (attempt + 1))
+                            else:
+                                self.stdout.write(self.style.ERROR(f"Failed to save products for {shop_name} ({category}) after {max_retries} attempts."))
                     data_queue.task_done()
-            
+
             # Start save worker thread
             save_thread = threading.Thread(target=save_worker, daemon=True)
             save_thread.start()
-            
+
             # Run scrapers and feed queue
-            scraped_data = self.run_catalog_scrapers_streaming(category, data_queue)
-            
+            self.run_catalog_scrapers_streaming(category, data_queue, max_pages=50)
+
             # Wait for all saves to complete
             data_queue.join()
             data_queue.put(None)  # Stop signal
             save_thread.join()
-        
+
         self.stdout.write(self.style.SUCCESS(f'\nCatalog populated: {total_created} products created, {total_updated} updated'))
 
     def create_categories(self, category_names):
@@ -117,10 +127,10 @@ class Command(BaseCommand):
         
         return count
 
-    def run_catalog_scrapers_streaming(self, category, data_queue):
+    def run_catalog_scrapers_streaming(self, category, data_queue, max_pages=50):
         """Run scrapers and stream results to queue as they complete"""
-        def run_all_scrapers_streaming(cat, queue):
-            # All scrapers are now synchronous (using cloudscraper for Ryans and Binary)
+        def run_all_scrapers_streaming(cat, queue, max_pages):
+            # All scrapers now accept max_pages argument
             scrapers = [
                 ('StarTech', scrape_startech_catalog),
                 ('SkyLand', scrape_skyland_catalog),
@@ -130,10 +140,10 @@ class Command(BaseCommand):
                 ('Ryans', scrape_ryans_catalog),
                 ('Binary', scrape_binary_catalog),
             ]
-            
+
             with ThreadPoolExecutor(max_workers=7) as executor:
-                futures = {executor.submit(scraper, cat): name for name, scraper in scrapers}
-                
+                futures = {executor.submit(scraper, cat, max_pages): name for name, scraper in scrapers}
+
                 for future in futures:
                     try:
                         result = future.result()
@@ -141,8 +151,8 @@ class Command(BaseCommand):
                         queue.put((shop_name, result))
                     except Exception as e:
                         logger.error(f"Error scraping {futures[future]}: {e}")
-        
-        run_all_scrapers_streaming(category, data_queue)
+
+        run_all_scrapers_streaming(category, data_queue, max_pages)
 
     def save_shop_products(self, shop_name, shop_data, category_name):
         """Save products from a single shop with optimized bulk operations"""

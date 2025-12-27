@@ -32,8 +32,7 @@ def normalize_price(text):
         return "Out Of Stock"
 
 
-# StarTech - Scrape all pages
-def scrape_startech_catalog(category):
+def scrape_startech_catalog(category, max_pages=50):
     """Scrape all pages from StarTech for a category"""
     try:
         base_url = "https://www.startech.com.bd/product/search"
@@ -45,7 +44,7 @@ def scrape_startech_catalog(category):
         products = []
         logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
         page = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
@@ -92,14 +91,13 @@ def scrape_startech_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# SkyLand - Scrape all pages
-def scrape_skyland_catalog(category):
+def scrape_skyland_catalog(category, max_pages=50):
     """Scrape all pages from SkyLand for a category"""
     try:
         base_url = "https://www.skyland.com.bd/"
         products = []
         page = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         logo = None
@@ -185,8 +183,7 @@ def scrape_skyland_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# PcHouse - Scrape all pages
-def scrape_pchouse_catalog(category):
+def scrape_pchouse_catalog(category, max_pages=50):
     """Scrape all pages from PcHouse for a category"""
     try:
         base_url = "https://www.pchouse.com.bd/product/search"
@@ -198,7 +195,7 @@ def scrape_pchouse_catalog(category):
         products = []
         logo_url = "https://www.pchouse.com.bd/image/catalog/unnamed.png"
         page = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
@@ -258,15 +255,14 @@ def scrape_pchouse_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# UltraTech - Scrape all pages
-def scrape_ultratech_catalog(category):
+def scrape_ultratech_catalog(category, max_pages=50):
     """Scrape all pages from UltraTech for a category"""
     try:
         base_url = "https://www.ultratech.com.bd/index.php"
         products = []
         logo_url = "https://www.ultratech.com.bd/image/catalog/logo.png"
         page = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
@@ -313,15 +309,14 @@ def scrape_ultratech_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# PotakaIT - Scrape all pages
-def scrape_potakait_catalog(category):
+def scrape_potakait_catalog(category, max_pages=50):
     """Scrape all pages from PotakaIT for a category"""
     try:
         base_url = "https://www.potakait.com/index.php"
         products = []
         logo_url = "https://www.potakait.com/image/catalog/logo.png"
         page = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
@@ -368,8 +363,7 @@ def scrape_potakait_catalog(category):
         return {"products": [], "logo": ""}
 
 
-# Ryans - Scrape all pages with cloudscraper (Cloudflare bypass)
-def scrape_ryans_catalog(category):
+def scrape_ryans_catalog(category, max_pages=50):
     """Scrape all pages from Ryans for a category using cloudscraper"""
     
     if not CLOUDSCRAPER_AVAILABLE:
@@ -394,7 +388,7 @@ def scrape_ryans_catalog(category):
         
         base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
         page_num = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page_num <= max_pages:
@@ -478,8 +472,7 @@ def scrape_ryans_catalog(category):
         return results
 
 
-# Binary Logic - Scrape all pages with cloudscraper
-def scrape_binary_catalog(category):
+def scrape_binary_catalog(category, max_pages=50):
     """Scrape all pages from Binary Logic for a category using cloudscraper"""
     
     if not CLOUDSCRAPER_AVAILABLE:
@@ -502,7 +495,7 @@ def scrape_binary_catalog(category):
         )
         
         page_num = 1
-        max_pages = 50
+        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page_num <= max_pages:
