@@ -380,6 +380,7 @@ def health_check(request):
     
     try:
         # Check database and get last update time
+        from django.db import OperationalError
         with connection.cursor() as cursor:
             # Count all products (including unavailable)
             cursor.execute("SELECT COUNT(*) FROM products_product")
@@ -395,7 +396,8 @@ def health_check(request):
                 last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')  # Human-readable format
             
         database_status = "connected"
-    except Exception as e:
+    except (Exception, OperationalError) as e:
+        logger.warning(f"Health check database query failed: {str(e)}")
         database_status = f"error: {str(e)}"
     
     return Response({
