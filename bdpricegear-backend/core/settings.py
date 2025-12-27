@@ -172,7 +172,7 @@ if os.environ.get('DATABASE_URL'):
     # Add connection timeout settings for psycopg and disable prepared statements for transaction pooler
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
-        'options': '-c statement_timeout=30000',
+        'options': '-c statement_timeout=300000',  # 5 minutes for bulk operations
     }
     # Disable server-side cursors for Supabase transaction pooler compatibility
     DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
