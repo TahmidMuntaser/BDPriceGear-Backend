@@ -431,6 +431,7 @@ def trigger_update(request):
         
         last_update_dhaka = 'Never updated'
         try:
+            from django.db import OperationalError
             with connection.cursor() as cursor:
                 cursor.execute("SELECT MAX(updated_at) FROM products_product")
                 last_updated = cursor.fetchone()[0]
@@ -438,8 +439,9 @@ def trigger_update(request):
                 if last_updated:
                     dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
                     last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
-        except Exception:
-            pass
+        except (Exception, OperationalError) as e:
+            logger.warning(f"Database query failed: {str(e)}")
+            last_update_dhaka = 'Database unavailable'
 
         return Response({
             "status": "ready",
@@ -456,14 +458,16 @@ def trigger_update(request):
         from zoneinfo import ZoneInfo
         last_update_dhaka = 'Never updated'
         try:
+            from django.db import OperationalError
             with connection.cursor() as cursor:
                 cursor.execute("SELECT MAX(updated_at) FROM products_product")
                 last_updated = cursor.fetchone()[0]
                 if last_updated:
                     dt_dhaka = timezone.localtime(last_updated, ZoneInfo('Asia/Dhaka'))
                     last_update_dhaka = dt_dhaka.strftime('%Y-%m-%d %I:%M %p %Z')
-        except Exception:
-            pass
+        except (Exception, OperationalError) as e:
+            logger.warning(f"Database query failed: {str(e)}")
+            last_update_dhaka = 'Database unavailable'
         
         return Response({
             "status": "already_running",
