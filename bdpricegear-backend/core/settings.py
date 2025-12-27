@@ -169,6 +169,11 @@ if os.environ.get('DATABASE_URL'):
             conn_health_checks=True,
         )
     }
+    # Add connection timeout settings for psycopg
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000'
+    }
 else:
     # Local development: Use SQLite
     DATABASES = {
