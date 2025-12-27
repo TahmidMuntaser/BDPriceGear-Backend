@@ -1,30 +1,20 @@
-name: Hourly Catalog Update
+name: Hourly Product Scraping
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Every 2 hours
-  workflow_dispatch:
+    # Runs every 2 hours at minute 0
+    - cron: '0 */2 * * *'
+  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
 
 jobs:
-  trigger-catalog-update:
+  trigger-scraping:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Trigger Catalog Update
+      - name: Trigger Product Update
         run: |
-          echo "Triggering catalog update at $(date)"
-          
-          # Note: The /api/catalog/update/ endpoint is disabled on production
-          # to prevent Gunicorn worker timeouts. This workflow is kept for 
-          # documentation purposes.
-          
-          # For Render, you should:
-          # 1. Use a Background Worker (paid plan) OR
-          # 2. Use Render Cron Jobs (separate service) OR
-          # 3. Manually SSH and run: python manage.py populate_catalog
-          
-          curl -X POST https://bdpricegear.onrender.com/api/catalog/update/ \
+          echo "Triggering product update at $(date)"
+          curl -X POST https://bdpricegear.onrender.com/api/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n" || true
-          
-          echo "Note: API endpoint is disabled. See workflow comments for alternatives."
+            -w "\nHTTP Status: %{http_code}\n"
+          echo "Update triggered successfully!"
