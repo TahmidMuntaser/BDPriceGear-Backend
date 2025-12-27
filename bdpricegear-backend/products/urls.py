@@ -4,7 +4,8 @@ from .views import (
     price_comparison, 
     ProductViewSet, CategoryViewSet, ShopViewSet,
     health_check, trigger_update, compare_product_prices,
-    cleanup_old_data, trigger_catalog_update, cleanup_old_products
+    cleanup_old_data, trigger_catalog_update, cleanup_old_products,
+    run_migrations
 )
 
 router = DefaultRouter()
@@ -26,6 +27,8 @@ urlpatterns = [
     path('cleanup/', cleanup_old_data, name='cleanup-old-data'),
     
     path('cleanup/products/', cleanup_old_products, name='cleanup-old-products'),
+    
+    path('migrate/', run_migrations, name='run-migrations'),
     
     path('', include(router.urls)),
 ]

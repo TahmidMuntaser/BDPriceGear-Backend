@@ -784,3 +784,34 @@ def cleanup_old_products(request):
         "timestamp": timezone.now().isoformat(),
         "note": "Deleting products not updated in 6 months"
     }, status=202)
+
+@api_view(['POST'])
+def run_migrations(request):
+    """
+    Run database migrations via API
+    POST /api/migrate/ - Run pending migrations
+    """
+    from django.core.management import call_command
+    from io import StringIO
+    import sys
+    
+    try:
+        # Capture migration output
+        output = StringIO()
+        call_command('migrate', '--noinput', stdout=output, stderr=output)
+        
+        migration_output = output.getvalue()
+        
+        return Response({
+            "status": "success",
+            "message": "Migrations completed successfully",
+            "output": migration_output,
+            "timestamp": timezone.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Migration failed: {str(e)}")
+        return Response({
+            "status": "error",
+            "message": f"Migration failed: {str(e)}",
+            "timestamp": timezone.now().isoformat()
+        }, status=500)
