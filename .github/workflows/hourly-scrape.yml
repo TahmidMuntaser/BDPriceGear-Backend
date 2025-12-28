@@ -16,5 +16,6 @@ jobs:
           echo "Triggering product update at $(date)"
           curl -X POST https://bdpricegear.onrender.com/api/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-          echo "Update triggered successfully!"
+            -w "\nHTTP Status: %{http_code}\n" \
+            --max-time 30  # Timeout after 30 seconds to avoid hanging on free Render
+          echo "Update triggered (may timeout on free Render - check logs)"
