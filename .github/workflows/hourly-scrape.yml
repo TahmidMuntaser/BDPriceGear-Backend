@@ -2,20 +2,51 @@ name: Hourly Product Scraping
 
 on:
   schedule:
-    # Runs every 2 hours at minute 0
     - cron: '0 */2 * * *'
-  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   trigger-scraping:
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # Workflow timeout, not curl timeout
     
     steps:
+      - name: Wake Up Render Service
+        run: |
+          echo " Waking up Render service..."
+          curl -s https://bdpricegear.onrender.com/ || true
+          sleep 10  # Give service time to wake up
+      
       - name: Trigger Product Update
         run: |
-          echo "Triggering product update at $(date)"
-          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+          echo " Triggering update at $(date)"
+          
+          # Make request without timeout (let it run in background)
+          response=$(curl -X POST https://bdpricegear.onrender.com/api/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n" \
-            --max-time 30  # Timeout after 30 seconds to avoid hanging on free Render
-          echo "Update triggered (may timeout on free Render - check logs)"
+            -w "\n%{http_code}" \
+            -s \
+            --connect-timeout 10 \
+            --max-time 120)  # 2 min max (just to trigger, not complete)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+          
+          # Accept 202 (Accepted) as success
+          if [ "$http_code" = "202" ] || [ "$http_code" = "200" ]; then
+            echo " Update triggered successfully"
+            exit 0
+          else
+            echo " Failed to trigger update"
+            exit 1
+          fi
+      
+      - name: Verify Update Status
+        if: success()
+        run: |
+          echo "⏳ Waiting 30s before checking status..."
+          sleep 30
+          curl -s https://bdpricegear.onrender.com/api/update/ | jq '.' || true
