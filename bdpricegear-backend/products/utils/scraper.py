@@ -29,7 +29,7 @@ def normalize_price(text):
 
 # ryans 
 async def scrape_ryans(product, context):
-    results = {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
+    results = {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
     page = None
     try:
         url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
@@ -99,7 +99,7 @@ def scrape_startech(product):
         soup = BeautifulSoup(response.text, "html.parser")
 
         products = []
-        logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
+        logo_url = "https://www.startech.com.bd/image/catalog/logo.png"
 
         for item in soup.select(".p-item"):
             name = item.select_one(".p-item-name")
@@ -132,14 +132,7 @@ def scrape_skyland(product):
         
         products = []
         
-        logo = soap.select_one("#logo img")
-        if logo:
-            logo_url = logo["src"]
-            # Ensure logo URL is absolute
-            if not logo_url.startswith(('http://', 'https://')):
-                logo_url = urllib.parse.urljoin(base_url, logo_url)
-        else:
-            logo_url = "logo not found"
+        logo_url = "https://www.skyland.com.bd/image/cache/wp/gp/skyland-logo-1398x471.webp"
             
         for item in soap.select(".product-layout"):
             name = item.select_one(".name")
@@ -246,11 +239,7 @@ def scrape_ultratech(product):
         
         products = []
         
-        logo = soap.select_one("#logo img")
-        if logo:
-            logo_url = logo["src"]
-        else:
-            logo_url = "logo not found"
+        logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
             
         for item in soap.select(".product-layout"):
             name = item.select_one(".name")
@@ -276,7 +265,7 @@ def scrape_ultratech(product):
 
 # binary playwright
 async def scrape_binary_playwright(product, context):
-    results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+    results = {"products": [], "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"}
     try:
         url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(product)}"
         page = await context.new_page()
@@ -317,11 +306,7 @@ def scrape_potakait(product):
         
         products = []
         
-        logo = soup.select_one(".brand-logo img")
-        if logo:
-            logo_url = logo["src"]
-        else:
-            logo_url = "logo not found"
+        logo_url = "https://potakait.com/image/catalog/potaka-logo.png"
         
         for item in soup.select(".product-item"):
             name = item.select_one(".title a")

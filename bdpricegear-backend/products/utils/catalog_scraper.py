@@ -101,7 +101,7 @@ def scrape_skyland_catalog(category, max_pages=50):
         consecutive_empty = 0
         
         logo = None
-        logo_url = "https://www.skyland.com.bd/image/catalog/logo.png"
+        logo_url = "https://www.skyland.com.bd/image/cache/wp/gp/skyland-logo-1398x471.webp"
         
         while page <= max_pages:
             url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(category)}&page={page}"
@@ -260,7 +260,7 @@ def scrape_ultratech_catalog(category, max_pages=50):
     try:
         base_url = "https://www.ultratech.com.bd/index.php"
         products = []
-        logo_url = "https://www.ultratech.com.bd/image/catalog/logo.png"
+        logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
         page = 1
         # max_pages is now passed as argument
         consecutive_empty = 0
@@ -372,7 +372,7 @@ def scrape_ryans_catalog(category, max_pages=50):
     
     results = {
         "products": [],
-        "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"
+        "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"
     }
     
     try:
@@ -477,11 +477,11 @@ def scrape_binary_catalog(category, max_pages=50):
     
     if not CLOUDSCRAPER_AVAILABLE:
         logger.error("Binary: cloudscraper not available. Install with: pip install cloudscraper")
-        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/logo.png"}
+        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"}
     
     results = {
         "products": [],
-        "logo": "https://www.binarylogic.com.bd/images/logo.png"
+        "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"
     }
     
     try:

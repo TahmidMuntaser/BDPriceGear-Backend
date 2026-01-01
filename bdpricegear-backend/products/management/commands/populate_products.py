@@ -108,19 +108,19 @@ class Command(BaseCommand):
             {
                 'name': 'StarTech',
                 'website_url': 'https://www.startech.com.bd',
-                'logo_url': 'https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png',
+                'logo_url': 'https://www.startech.com.bd/image/catalog/logo.png',
                 'priority': 5
             },
             {
                 'name': 'Ryans',
                 'website_url': 'https://www.ryans.com',
-                'logo_url': 'https://www.ryans.com/wp-content/themes/ryans/img/logo.png',
+                'logo_url': 'https://www.ryans.com/assets/images/ryans-logo.svg',
                 'priority': 4
             },
             {
                 'name': 'SkyLand',
                 'website_url': 'https://www.skyland.com.bd',
-                'logo_url': 'https://www.skyland.com.bd/image/catalog/logo.png',
+                'logo_url': 'https://www.skyland.com.bd/image/cache/wp/gp/skyland-logo-1398x471.webp',
                 'priority': 3
             },
             {
@@ -132,13 +132,13 @@ class Command(BaseCommand):
             {
                 'name': 'UltraTech',
                 'website_url': 'https://www.ultratech.com.bd',
-                'logo_url': 'https://www.ultratech.com.bd/image/catalog/logo.png',
+                'logo_url': 'https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp',
                 'priority': 2
             },
             {
                 'name': 'Binary',
                 'website_url': 'https://www.binarylogic.com.bd',
-                'logo_url': 'https://www.binarylogic.com.bd/images/logo.png',
+                'logo_url': 'https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp',
                 'priority': 2
             },
             {
