@@ -164,6 +164,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     # - ?in_stock=true
     # - ?on_sale=true
     # - ?show_unavailable=true (to include out of stock items)
+    # - ?product=<name> (search for specific product by name)
     
     queryset = Product.objects.all().select_related('category', 'shop')
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -175,6 +176,12 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """Return all products by default, including unavailable ones."""
         queryset = super().get_queryset()
+        
+        # Handle ?product=<name> query parameter
+        product_name = self.request.query_params.get('product', None)
+        if product_name:
+            queryset = queryset.filter(name__icontains=product_name)
+        
         # Optionally filter to show only available products
         only_available = self.request.query_params.get('only_available', 'false').lower() == 'true'
         if only_available:
