@@ -26,7 +26,7 @@ class Command(BaseCommand):
             '--categories',
             nargs='+',
             type=str,
-            default=['laptop', 'mouse', 'keyboard', 'monitor', 'webcam', 'microphone', 'speaker', 'headphone', 'ram', 'ssd', 'hdd'],
+            default=['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Webcam', 'Microphone', 'Speaker', 'Headphone', 'RAM', 'SSD', 'HDD'],
             help='Categories to scrape'
         )
 

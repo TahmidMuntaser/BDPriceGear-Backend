@@ -29,8 +29,8 @@ class Command(BaseCommand):
             '--search',
             nargs='+',
             type=str,
-            default=['laptop', 'mouse', 'keyboard', 'monitor', 'webcam', 'Microphone', 'speaker', 'headphone', 'ram', 'ssd', 'hdd'],
-            help='Search terms to scrape (default: laptop, mouse, keyboard, monitor)'
+            default=['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Webcam', 'Microphone', 'Speaker', 'Headphone', 'RAM', 'SSD', 'HDD'],
+            help='Search terms to scrape (default: Laptop, Mouse, Keyboard, Monitor)'
         )
         parser.add_argument(
             '--limit',
