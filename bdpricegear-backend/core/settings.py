@@ -162,20 +162,45 @@ import dj_database_url
 
 if os.environ.get('DATABASE_URL'):
     # Production: Use PostgreSQL from Supabase
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-    # Add connection timeout settings for psycopg and disable prepared statements for transaction pooler
-    DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 10,
-        'options': '-c statement_timeout=300000',  # 5 minutes for bulk operations
-    }
-    # Disable server-side cursors for Supabase transaction pooler compatibility
-    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+    database_url = os.environ.get('DATABASE_URL')
+    
+    # Detect if using Supabase transaction pooler (port 6543) or session pooler (port 5432)
+    is_transaction_pooler = ':6543/' in database_url
+    
+    if is_transaction_pooler:
+        # Transaction Pooler Configuration (port 6543)
+        # Designed for serverless - NO connection pooling, connections closed after each request
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=database_url,
+                conn_max_age=0,  # Disable connection pooling - CRITICAL for transaction pooler
+                conn_health_checks=False,  # Not needed without pooling
+            )
+        }
+        DATABASES['default']['OPTIONS'] = {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000',  # 30 seconds for transaction pooler
+        }
+        # Disable server-side cursors for transaction pooler compatibility
+        DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+    else:
+        # Session Pooler Configuration (port 5432) - RECOMMENDED for Render
+        # Supports persistent connections - better for long-running servers
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=database_url,
+                conn_max_age=300,  # 5 minutes - keep connections alive to reuse
+                conn_health_checks=True,  # Check connection health before reuse
+            )
+        }
+        DATABASES['default']['OPTIONS'] = {
+            'connect_timeout': 10,
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5,
+            'options': '-c statement_timeout=300000',  # 5 minutes for bulk operations
+        }
 else:
     # Local development: Use SQLite
     DATABASES = {
