@@ -263,20 +263,42 @@ class Command(BaseCommand):
                     is_available = stock_status == 'in_stock'
                     current_price = price
                 
-                # Create/update product
-                product, created = Product.objects.update_or_create(
+                product_name = product_data.get('name', 'Unknown Product')[:500]
+                
+                # DUPLICATE PREVENTION: Check for existing product by name+shop first
+                # This prevents duplicates when same product has different URLs
+                existing_product = Product.objects.filter(
                     shop=shop,
-                    product_url=product_url,
-                    defaults={
-                        'name': product_data.get('name', 'Unknown Product')[:500],
-                        'category': category,
-                        'image_url': product_data.get('img', ''),
-                        'current_price': current_price,
-                        'stock_status': stock_status,
-                        'is_available': is_available,
-                        'last_scraped': timezone.now(),
-                    }
-                )
+                    name=product_name
+                ).first()
+                
+                if existing_product:
+                    # Update existing product (found by name)
+                    existing_product.product_url = product_url  # Update URL if different
+                    existing_product.category = category
+                    existing_product.image_url = product_data.get('img', '')
+                    existing_product.current_price = current_price
+                    existing_product.stock_status = stock_status
+                    existing_product.is_available = is_available
+                    existing_product.last_scraped = timezone.now()
+                    existing_product.save()
+                    product = existing_product
+                    created = False
+                else:
+                    # Create new product (no existing product with this name+shop)
+                    product, created = Product.objects.update_or_create(
+                        shop=shop,
+                        product_url=product_url,
+                        defaults={
+                            'name': product_name,
+                            'category': category,
+                            'image_url': product_data.get('img', ''),
+                            'current_price': current_price,
+                            'stock_status': stock_status,
+                            'is_available': is_available,
+                            'last_scraped': timezone.now(),
+                        }
+                    )
                 
                 if created:
                     created_count += 1

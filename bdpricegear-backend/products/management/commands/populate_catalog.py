@@ -176,19 +176,29 @@ class Command(BaseCommand):
         if not products_data:
             return 0, 0
         
-        # Extract all product URLs for this batch
+        # Extract all product URLs and names for this batch
         product_urls = [p.get('link', '') for p in products_data if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
+        product_names = [p.get('name', '')[:500] for p in products_data if p.get('name')]
         
-        # Fetch existing products in one query
-        existing_products = {
+        # Fetch existing products by URL in one query
+        existing_products_by_url = {
             p.product_url: p for p in Product.objects.filter(
                 shop=shop,
                 product_url__in=product_urls
             ).select_related('category', 'shop')
         }
         
+        # Fetch existing products by NAME in one query (DUPLICATE PREVENTION)
+        existing_products_by_name = {
+            p.name: p for p in Product.objects.filter(
+                shop=shop,
+                name__in=product_names
+            ).select_related('category', 'shop')
+        }
+        
         # Fetch latest price history for existing products in one query
-        existing_product_ids = list(existing_products.values())
+        all_existing_products = list(existing_products_by_url.values()) + list(existing_products_by_name.values())
+        existing_product_ids = list(set(all_existing_products))  # Remove duplicates
         latest_prices = {}
         if existing_product_ids:
             from django.db.models import Max
@@ -205,6 +215,7 @@ class Command(BaseCommand):
         for product_data in products_data:
             price = product_data.get('price')
             product_url = product_data.get('link', '')
+            product_name = product_data.get('name', 'Unknown Product')[:500]
             
             if not product_url or product_url in ['#', 'Link not found', '']:
                 continue
@@ -218,10 +229,13 @@ class Command(BaseCommand):
                 is_available = True
                 current_price = price
             
-            if product_url in existing_products:
-                # Update existing product
-                product = existing_products[product_url]
-                product.name = product_data.get('name', 'Unknown Product')[:500]
+            # DUPLICATE PREVENTION: Check by name first, then by URL
+            product = existing_products_by_name.get(product_name) or existing_products_by_url.get(product_url)
+            
+            if product:
+                # Update existing product (found by name or URL)
+                product.name = product_name
+                product.product_url = product_url  # Update URL if different
                 product.category = category
                 product.image_url = product_data.get('img', '')
                 product.current_price = current_price
