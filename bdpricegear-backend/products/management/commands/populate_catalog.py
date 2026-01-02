@@ -33,6 +33,22 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting catalog population...'))
 
+        # Map category names to search terms for websites
+        category_to_search_term = {
+            'Processor': 'CPU',
+            'Motherboard': 'Motherboard',
+            'RAM': 'RAM',
+            'SSD': 'SSD',
+            'HDD': 'HDD',
+            'Power Supply': 'Power Supply',
+            'Cabinet': 'PC Case',
+            'GPU': 'Graphics Card',
+            'CPU Cooler': 'CPU Cooler',
+            'Monitor': 'Monitor',
+            'Keyboard': 'Keyboard',
+            'Mouse': 'Mouse',
+        }
+
         categories_created = self.create_categories(options['categories'])
         self.stdout.write(self.style.SUCCESS(f'Categories ready: {categories_created}'))
 
@@ -43,7 +59,9 @@ class Command(BaseCommand):
         total_updated = 0
 
         for category in options['categories']:
-            self.stdout.write(f'\nScraping category: {category}')
+            # Get the search term for this category
+            search_term = category_to_search_term.get(category, category)
+            self.stdout.write(f'\nScraping category: {category} (searching: {search_term})')
 
             # Queue for passing scraped data from scraper to saver
             data_queue = queue.Queue()
@@ -75,8 +93,8 @@ class Command(BaseCommand):
             save_thread = threading.Thread(target=save_worker, daemon=True)
             save_thread.start()
 
-            # Run scrapers and feed queue
-            self.run_catalog_scrapers_streaming(category, data_queue, max_pages=25)
+            # Run scrapers with the search term (not category name)
+            self.run_catalog_scrapers_streaming(search_term, data_queue, max_pages=25)
 
             # Wait for all saves to complete
             data_queue.join()
@@ -161,6 +179,7 @@ class Command(BaseCommand):
         
         self.stdout.write(f'  Saving {shop_name} products ({len(shop_data.get("products", []))} items)...')
         
+        # Get the category - all products from this search will be assigned to this category
         category = Category.objects.filter(name__iexact=category_name).first()
         
         try:
@@ -176,9 +195,15 @@ class Command(BaseCommand):
         if not products_data:
             return 0, 0
         
-        # Extract all product URLs and names for this batch
+        # Helper function to normalize product names for duplicate detection
+        def normalize_name(name):
+            """Normalize product name by removing extra spaces and converting to lowercase"""
+            return ' '.join(name.strip().lower().split())
+        
+        # Extract all product URLs and normalized names for this batch
         product_urls = [p.get('link', '') for p in products_data if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
         product_names = [p.get('name', '')[:500] for p in products_data if p.get('name')]
+        normalized_names = [normalize_name(name) for name in product_names]
         
         # Fetch existing products by URL in one query
         existing_products_by_url = {
@@ -188,16 +213,14 @@ class Command(BaseCommand):
             ).select_related('category', 'shop')
         }
         
-        # Fetch existing products by NAME in one query (DUPLICATE PREVENTION)
-        existing_products_by_name = {
-            p.name: p for p in Product.objects.filter(
-                shop=shop,
-                name__in=product_names
-            ).select_related('category', 'shop')
+        # Fetch ALL products from this shop to check normalized names (DUPLICATE PREVENTION)
+        all_shop_products = Product.objects.filter(shop=shop).select_related('category', 'shop')
+        existing_products_by_normalized_name = {
+            normalize_name(p.name): p for p in all_shop_products
         }
         
         # Fetch latest price history for existing products in one query
-        all_existing_products = list(existing_products_by_url.values()) + list(existing_products_by_name.values())
+        all_existing_products = list(existing_products_by_url.values()) + list(existing_products_by_normalized_name.values())
         existing_product_ids = list(set(all_existing_products))  # Remove duplicates
         latest_prices = {}
         if existing_product_ids:
@@ -229,8 +252,9 @@ class Command(BaseCommand):
                 is_available = True
                 current_price = price
             
-            # DUPLICATE PREVENTION: Check by name first, then by URL
-            product = existing_products_by_name.get(product_name) or existing_products_by_url.get(product_url)
+            # DUPLICATE PREVENTION: Check by normalized name first, then by URL
+            normalized_product_name = normalize_name(product_name)
+            product = existing_products_by_normalized_name.get(normalized_product_name) or existing_products_by_url.get(product_url)
             
             if product:
                 # Update existing product (found by name or URL)

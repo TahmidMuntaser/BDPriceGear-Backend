@@ -42,6 +42,22 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS(' Starting database population...'))
         
+        # Map category names to search terms for websites
+        category_to_search_term = {
+            'Processor': 'CPU',
+            'Motherboard': 'Motherboard',
+            'RAM': 'RAM',
+            'SSD': 'SSD',
+            'HDD': 'HDD',
+            'Power Supply': 'Power Supply',
+            'Cabinet': 'PC Case',
+            'GPU': 'Graphics Card',
+            'CPU Cooler': 'CPU Cooler',
+            'Monitor': 'Monitor',
+            'Keyboard': 'Keyboard',
+            'Mouse': 'Mouse',
+        }
+        
         # Step 1: Create categories
         self.stdout.write('\n📁 Creating categories...')
         categories_created = self.create_categories(options['search'])
@@ -57,14 +73,16 @@ class Command(BaseCommand):
         total_created = 0
         total_updated = 0
         
-        for search_term in options['search']:
-            self.stdout.write(f'\n  Searching for: {search_term}')
+        for category in options['search']:
+            # Get the search term for this category
+            search_term = category_to_search_term.get(category, category)
+            self.stdout.write(f'\n  Category: {category} (searching: {search_term})')
             
-            # Run scrapers
+            # Run scrapers with search term
             scraped_data = self.run_scrapers(search_term)
             
-            # Save to database
-            created, updated = self.save_products(scraped_data, search_term, options['limit'])
+            # Save to database with original category name
+            created, updated = self.save_products(scraped_data, category, options['limit'])
             total_created += created
             total_updated += updated
             
@@ -224,8 +242,13 @@ class Command(BaseCommand):
         created_count = 0
         updated_count = 0
         
-        # Try to find matching category
+        # Get the category - all products from this search will be assigned to this category
         category = Category.objects.filter(name__iexact=search_term).first()
+        
+        # Helper function to normalize product names for duplicate detection
+        def normalize_name(name):
+            """Normalize product name by removing extra spaces and converting to lowercase"""
+            return ' '.join(name.strip().lower().split())
         
         for shop_name, shop_data in scraped_data.items():
             # Get shop
@@ -265,13 +288,16 @@ class Command(BaseCommand):
                     current_price = price
                 
                 product_name = product_data.get('name', 'Unknown Product')[:500]
+                normalized_product_name = normalize_name(product_name)
                 
-                # DUPLICATE PREVENTION: Check for existing product by name+shop first
-                # This prevents duplicates when same product has different URLs
-                existing_product = Product.objects.filter(
-                    shop=shop,
-                    name=product_name
-                ).first()
+                # DUPLICATE PREVENTION: Check for existing product by normalized name+shop first
+                # This prevents duplicates when same product has different URLs or slight name variations
+                all_shop_products = Product.objects.filter(shop=shop).select_related('category')
+                existing_product = None
+                for p in all_shop_products:
+                    if normalize_name(p.name) == normalized_product_name:
+                        existing_product = p
+                        break
                 
                 if existing_product:
                     # Update existing product (found by name)
