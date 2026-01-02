@@ -29,8 +29,8 @@ class Command(BaseCommand):
             '--search',
             nargs='+',
             type=str,
-            default=['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Webcam', 'Microphone', 'Speaker', 'Headphone', 'RAM', 'SSD', 'HDD'],
-            help='Search terms to scrape (default: Laptop, Mouse, Keyboard, Monitor)'
+            default=['Processor', 'Motherboard', 'RAM', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'GPU', 'CPU Cooler', 'Monitor', 'Keyboard', 'Mouse'],
+            help='PC component search terms to scrape'
         )
         parser.add_argument(
             '--limit',
@@ -78,17 +78,18 @@ class Command(BaseCommand):
         """Create categories from search terms"""
         count = 0
         categories = [
-            'Laptop',
-            'Mouse',
-            'Keyboard',
-            'Monitor',
-            'Headphone',
-            'Speaker',
-            'Webcam',
-            'Microphone',
+            'Processor',
+            'Motherboard',
             'RAM',
             'SSD',
             'HDD',
+            'Power Supply',
+            'Cabinet',
+            'GPU',
+            'CPU Cooler',
+            'Monitor',
+            'Keyboard',
+            'Mouse',
         ]
         
         for cat_name in categories:

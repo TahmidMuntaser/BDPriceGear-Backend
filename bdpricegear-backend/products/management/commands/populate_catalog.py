@@ -26,8 +26,8 @@ class Command(BaseCommand):
             '--categories',
             nargs='+',
             type=str,
-            default=['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Webcam', 'Microphone', 'Speaker', 'Headphone', 'RAM', 'SSD', 'HDD'],
-            help='Categories to scrape'
+            default=['Processor', 'Motherboard', 'RAM', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'GPU', 'CPU Cooler', 'Monitor', 'Keyboard', 'Mouse'],
+            help='PC component categories to scrape'
         )
 
     def handle(self, *args, **options):
@@ -76,7 +76,7 @@ class Command(BaseCommand):
             save_thread.start()
 
             # Run scrapers and feed queue
-            self.run_catalog_scrapers_streaming(category, data_queue, max_pages=50)
+            self.run_catalog_scrapers_streaming(category, data_queue, max_pages=25)
 
             # Wait for all saves to complete
             data_queue.join()
@@ -87,7 +87,7 @@ class Command(BaseCommand):
 
     def create_categories(self, category_names):
         count = 0
-        categories = ['Laptop', 'Mouse', 'Keyboard', 'Monitor', 'Headphone', 'Speaker', 'Webcam', 'Microphone', 'RAM', 'SSD', 'HDD']
+        categories = ['Processor', 'Motherboard', 'RAM', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'GPU', 'CPU Cooler', 'Monitor', 'Keyboard', 'Mouse']
         
         for cat_name in categories:
             _, created = Category.objects.update_or_create(
