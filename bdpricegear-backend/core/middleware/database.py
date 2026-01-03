@@ -6,11 +6,14 @@ This middleware ensures proper database connection management by:
 2. Ensuring connections are closed after each response
 3. Handling connection errors gracefully
 4. Preventing connection timeout issues
+5. Retrying failed connections
 """
 
 import logging
-from django.db import connections, close_old_connections
+import time
+from django.db import connections, close_old_connections, OperationalError
 from django.core.exceptions import MiddlewareNotUsed
+from django.http import JsonResponse
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +36,56 @@ class DatabaseConnectionMiddleware:
         # This ensures we don't use stale or timed-out connections
         close_old_connections()
         
-        try:
-            # Process the request
-            response = self.get_response(request)
-            
-            # Ensure all connections are properly returned to the pool
-            self._cleanup_connections()
-            
-            return response
-            
-        except Exception as e:
-            # On any error, ensure connections are cleaned up
-            logger.error(f"Error during request processing: {e}")
-            self._cleanup_connections()
-            raise
+        # Retry logic for database connection issues
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Process the request
+                response = self.get_response(request)
+                
+                # Ensure all connections are properly returned to the pool
+                self._cleanup_connections()
+                
+                return response
+                
+            except OperationalError as e:
+                # Database connection error
+                error_msg = str(e).lower()
+                
+                if 'connection timeout' in error_msg or 'could not connect' in error_msg:
+                    logger.warning(f"Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                    
+                    if attempt < max_retries - 1:
+                        # Retry after delay
+                        time.sleep(retry_delay)
+                        close_old_connections()  # Close failed connection
+                        continue
+                    else:
+                        # Final attempt failed
+                        logger.error(f"Database connection failed after {max_retries} attempts: {e}")
+                        self._cleanup_connections()
+                        
+                        # Return user-friendly error
+                        return JsonResponse({
+                            'error': 'Database temporarily unavailable',
+                            'message': 'Please try again in a moment',
+                            'details': 'Connection timeout - database may be slow to respond'
+                        }, status=503)
+                else:
+                    # Other database error, don't retry
+                    raise
+                    
+            except Exception as e:
+                # On any other error, ensure connections are cleaned up
+                logger.error(f"Error during request processing: {e}")
+                self._cleanup_connections()
+                raise
+        
+        # Should never reach here
+        self._cleanup_connections()
+        return JsonResponse({'error': 'Unexpected error'}, status=500)
     
     def _cleanup_connections(self):
         """

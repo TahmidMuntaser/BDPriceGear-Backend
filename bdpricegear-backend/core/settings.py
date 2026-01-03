@@ -179,7 +179,7 @@ if os.environ.get('DATABASE_URL'):
             )
         }
         DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 15,  # Increased from 10
+            'connect_timeout': 60,  # Increased to 60 seconds for network issues
             'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000',
         }
         # Disable server-side cursors for transaction pooler compatibility
@@ -195,11 +195,12 @@ if os.environ.get('DATABASE_URL'):
             )
         }
         DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 15,  # Increased from 10
+            'connect_timeout': 60,  # Increased to 60 seconds for network issues
             'keepalives': 1,
             'keepalives_idle': 30,
             'keepalives_interval': 10,
             'keepalives_count': 5,
+            'tcp_user_timeout': 30000,  # 30 seconds TCP timeout
             'options': '-c statement_timeout=300000 -c idle_in_transaction_session_timeout=60000',
         }
         # Enable connection pooling optimization
