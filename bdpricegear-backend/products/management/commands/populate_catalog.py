@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, close_old_connections
 import asyncio
 import logging
 from playwright.async_api import async_playwright
@@ -73,16 +73,25 @@ class Command(BaseCommand):
                     if item is None:  # Sentinel to stop
                         break
                     shop_name, shop_data = item
-                    # Retry logic for saving products
+                    # Retry logic for saving products with connection cleanup
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
+                            # Close old connections before each save attempt
+                            close_old_connections()
+                            
                             created, updated = self.save_shop_products(shop_name, shop_data, category)
                             total_created += created
                             total_updated += updated
+                            
+                            # Close connections after successful save
+                            close_old_connections()
                             break
                         except Exception as e:
                             logger.error(f"Error saving products for {shop_name} ({category}), attempt {attempt+1}: {e}")
+                            # Close connections on error
+                            close_old_connections()
+                            
                             if attempt < max_retries - 1:
                                 import time; time.sleep(2 * (attempt + 1))
                             else:
@@ -173,13 +182,16 @@ class Command(BaseCommand):
         run_all_scrapers_streaming(category, data_queue, max_pages)
 
     def save_shop_products(self, shop_name, shop_data, category_name):
-        """Save products from a single shop with optimized bulk operations"""
+        """Save products from a single shop with proper connection management"""
         created_count = 0
         updated_count = 0
         
         self.stdout.write(f'  Saving {shop_name} products ({len(shop_data.get("products", []))} items)...')
         
-        # Get the category - all products from this search will be assigned to this category
+        # Close old connections before starting
+        close_old_connections()
+        
+        # Get the category
         category = Category.objects.filter(name__iexact=category_name).first()
         
         try:
@@ -195,47 +207,50 @@ class Command(BaseCommand):
         if not products_data:
             return 0, 0
         
-        # Helper function to normalize product names for duplicate detection
-        def normalize_name(name):
-            """Normalize product name by removing extra spaces and converting to lowercase"""
-            return ' '.join(name.strip().lower().split())
+        # Process in small batches to prevent long-running transactions
+        batch_size = 50
+        for i in range(0, len(products_data), batch_size):
+            batch = products_data[i:i + batch_size]
+            
+            # Close connections before each batch
+            close_old_connections()
+            
+            try:
+                with transaction.atomic():
+                    created, updated = self._save_product_batch(batch, shop, category)
+                    created_count += created
+                    updated_count += updated
+            except Exception as e:
+                logger.error(f"Error saving batch for {shop_name}: {e}")
+            finally:
+                # Always close connections after batch
+                close_old_connections()
         
-        # Extract all product URLs and normalized names for this batch
-        product_urls = [p.get('link', '') for p in products_data if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
-        product_names = [p.get('name', '')[:500] for p in products_data if p.get('name')]
-        normalized_names = [normalize_name(name) for name in product_names]
+        self.stdout.write(f'    {shop_name}: {created_count} created, {updated_count} updated')
+        return created_count, updated_count
+    
+    def _save_product_batch(self, batch, shop, category):
+        """Save a small batch of products - runs within a transaction"""
+        created_count = 0
+        updated_count = 0
+        now = timezone.now()
         
-        # Fetch existing products by URL in one query
-        existing_products_by_url = {
+        # Extract URLs for this batch
+        product_urls = [p.get('link', '') for p in batch if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
+        
+        # Fetch existing products for this batch only (not all shop products!)
+        existing_by_url = {
             p.product_url: p for p in Product.objects.filter(
                 shop=shop,
                 product_url__in=product_urls
-            ).select_related('category', 'shop')
+            ).only('id', 'name', 'product_url', 'current_price')
         }
-        
-        # Fetch ALL products from this shop to check normalized names (DUPLICATE PREVENTION)
-        all_shop_products = Product.objects.filter(shop=shop).select_related('category', 'shop')
-        existing_products_by_normalized_name = {
-            normalize_name(p.name): p for p in all_shop_products
-        }
-        
-        # Fetch latest price history for existing products in one query
-        all_existing_products = list(existing_products_by_url.values()) + list(existing_products_by_normalized_name.values())
-        existing_product_ids = list(set(all_existing_products))  # Remove duplicates
-        latest_prices = {}
-        if existing_product_ids:
-            from django.db.models import Max
-            price_history_qs = PriceHistory.objects.filter(
-                product__in=existing_product_ids
-            ).values('product_id').annotate(latest_price=Max('price'))
-            latest_prices = {ph['product_id']: ph['latest_price'] for ph in price_history_qs}
         
         products_to_create = []
         products_to_update = []
-        price_histories_to_create = []
-        now = timezone.now()
+        price_histories = []
         
-        for product_data in products_data:
+        for product_data in batch:
             price = product_data.get('price')
             product_url = product_data.get('link', '')
             product_name = product_data.get('name', 'Unknown Product')[:500]
@@ -248,44 +263,39 @@ class Command(BaseCommand):
                 is_available = False
                 current_price = 0
             else:
-                stock_status = 'in_stock' if product_data.get('in_stock', True) else 'out_of_stock'
+                stock_status = 'in_stock'
                 is_available = True
                 current_price = price
             
-            # DUPLICATE PREVENTION: Check by normalized name first, then by URL
-            normalized_product_name = normalize_name(product_name)
-            product = existing_products_by_normalized_name.get(normalized_product_name) or existing_products_by_url.get(product_url)
+            # Check if product exists by URL
+            existing_product = existing_by_url.get(product_url)
             
-            if product:
-                # Update existing product (found by name or URL)
-                product.name = product_name
-                product.product_url = product_url  # Update URL if different
-                product.category = category
-                product.image_url = product_data.get('img', '')
-                product.current_price = current_price
-                product.stock_status = stock_status
-                product.is_available = is_available
-                product.last_scraped = now
-                products_to_update.append(product)
+            if existing_product:
+                # Update existing
+                existing_product.name = product_name
+                existing_product.category = category
+                existing_product.image_url = product_data.get('img', '')
+                existing_product.current_price = current_price
+                existing_product.stock_status = stock_status
+                existing_product.is_available = is_available
+                existing_product.last_scraped = now
+                products_to_update.append(existing_product)
                 updated_count += 1
                 
-                # Check if price changed
-                latest_price = latest_prices.get(product.id)
-                if latest_price is None or float(latest_price) != float(current_price):
-                    price_histories_to_create.append(
-                        PriceHistory(
-                            product=product,
-                            price=current_price,
-                            stock_status=stock_status,
-                            recorded_at=now
-                        )
-                    )
+                # Price history if changed
+                if float(existing_product.current_price) != float(current_price):
+                    price_histories.append(PriceHistory(
+                        product=existing_product,
+                        price=current_price,
+                        stock_status=stock_status,
+                        recorded_at=now
+                    ))
             else:
-                # Create new product
+                # Create new
                 new_product = Product(
                     shop=shop,
                     product_url=product_url,
-                    name=product_data.get('name', 'Unknown Product')[:500],
+                    name=product_name,
                     category=category,
                     image_url=product_data.get('img', ''),
                     current_price=current_price,
@@ -296,40 +306,27 @@ class Command(BaseCommand):
                 products_to_create.append(new_product)
                 created_count += 1
         
-        # Bulk create new products
+        # Bulk operations
         if products_to_create:
-            self.stdout.write(f'    Creating {len(products_to_create)} new products...')
-            created_products = Product.objects.bulk_create(
-                products_to_create, 
-                batch_size=500,
-                ignore_conflicts=True
-            )
-            # Add price history for new products
+            created_products = Product.objects.bulk_create(products_to_create, batch_size=50, ignore_conflicts=True)
             for product in created_products:
-                if product.pk:  # Only add history if product was actually created
-                    price_histories_to_create.append(
-                        PriceHistory(
-                            product=product,
-                            price=product.current_price,
-                            stock_status=product.stock_status,
-                            recorded_at=now
-                        )
-                    )
+                if product.pk:
+                    price_histories.append(PriceHistory(
+                        product=product,
+                        price=product.current_price,
+                        stock_status=product.stock_status,
+                        recorded_at=now
+                    ))
         
-        # Bulk update existing products
         if products_to_update:
-            self.stdout.write(f'    Updating {len(products_to_update)} existing products...')
             Product.objects.bulk_update(
                 products_to_update,
                 ['name', 'category', 'image_url', 'current_price', 'stock_status', 'is_available', 'last_scraped'],
-                batch_size=500
+                batch_size=50
             )
         
-        # Bulk create price histories
-        if price_histories_to_create:
-            self.stdout.write(f'    Creating {len(price_histories_to_create)} price history records...')
-            PriceHistory.objects.bulk_create(price_histories_to_create, batch_size=500)
+        if price_histories:
+            PriceHistory.objects.bulk_create(price_histories, batch_size=50)
         
-        self.stdout.write(f'    {shop_name}: {created_count} created, {updated_count} updated')
         return created_count, updated_count
 
