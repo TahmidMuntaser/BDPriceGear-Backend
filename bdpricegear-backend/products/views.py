@@ -437,9 +437,6 @@ def trigger_update(request):
     from django.core.cache import cache
     from django.db import connection, close_old_connections
     import threading
-    import subprocess
-    import sys
-    import os
     
     # Close stale connections
     close_old_connections()
@@ -501,43 +498,38 @@ def trigger_update(request):
         }, status=200)
     
     def run_update():
-        """Run update in separate process to avoid connection issues during worker restarts"""
-        from django.conf import settings
-        from django.db import close_old_connections
+        """Run update using Django's call_command in background thread"""
+        from django.core.management import call_command
+        from django.db import close_old_connections, connection
+        import io
         
         try:
             # Mark update as in progress
             cache.set('update_in_progress', True, timeout=3600)
             logger.info("🔄 Manual catalog update triggered via API")
             
-            # Find manage.py using Django's BASE_DIR
-            # BASE_DIR is bdpricegear-backend/ directory
-            base_dir = settings.BASE_DIR
-            manage_py = os.path.join(base_dir, 'manage.py')
+            # Close any inherited connections - thread will create fresh ones
+            close_old_connections()
             
-            logger.info(f"Running command: {sys.executable} {manage_py} populate_catalog")
+            # Capture output
+            stdout_capture = io.StringIO()
+            stderr_capture = io.StringIO()
             
-            # Run in subprocess to isolate from parent process/worker lifecycle
-            process = subprocess.Popen(
-                [sys.executable, manage_py, 'populate_catalog'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=base_dir,  # Run from Django project directory
-                close_fds=True,  # Don't inherit parent connections
-                env=os.environ.copy()
-            )
-            
-            # Wait for completion (in background thread)
-            stdout, stderr = process.communicate()
-            
-            if process.returncode == 0:
+            try:
+                # Run Django management command directly
+                call_command('populate_catalog', stdout=stdout_capture, stderr=stderr_capture)
+                
                 logger.info("✅ Product update completed successfully")
-                if stdout:
-                    logger.info(f"Output: {stdout.decode('utf-8', errors='ignore')[:500]}")  # Log first 500 chars
-            else:
-                logger.error(f"❌ Product update failed with code {process.returncode}")
-                if stderr:
-                    logger.error(f"Error: {stderr.decode('utf-8', errors='ignore')[:1000]}")  # Log first 1000 chars
+                output = stdout_capture.getvalue()
+                if output:
+                    logger.info(f"Output: {output[:500]}")
+                    
+            except Exception as cmd_error:
+                logger.error(f"❌ Command failed: {str(cmd_error)}")
+                error_output = stderr_capture.getvalue()
+                if error_output:
+                    logger.error(f"Stderr: {error_output[:500]}")
+                raise
             
             # Store update timestamp
             close_old_connections()
