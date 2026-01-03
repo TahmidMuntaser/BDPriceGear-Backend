@@ -423,16 +423,36 @@ def scrape_ryans_catalog(category, max_pages=50):
         "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"
     }
     
+    # Enhanced headers to bypass cloud server detection
+    custom_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+        'Referer': 'https://www.google.com/',
+    }
+    
     try:
-        # Create scraper instance (handles Cloudflare automatically)
+        # Create scraper instance with enhanced settings
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
                 'platform': 'windows',
-                'desktop': True
+                'desktop': True,
+                'mobile': False
             },
-            delay=10  # Delay before solving challenge
+            delay=10,
+            interpreter='nodejs'  # Better JS challenge solving
         )
+        scraper.headers.update(custom_headers)
         
         base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
         page_num = 1
@@ -445,15 +465,29 @@ def scrape_ryans_catalog(category, max_pages=50):
             
             try:
                 # cloudscraper automatically handles Cloudflare challenges
-                response = scraper.get(url, timeout=30)
+                response = None
+                for retry in range(3):
+                    try:
+                        response = scraper.get(url, timeout=45)
+                        if response.status_code == 200:
+                            break
+                        elif response.status_code == 403:
+                            logger.warning(f"Ryans: Page {page_num} returned 403 (attempt {retry+1}/3), waiting...")
+                            time.sleep(15 + retry * 10)  # Increasing delay
+                            # Recreate scraper with fresh session
+                            scraper = cloudscraper.create_scraper(
+                                browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True},
+                                delay=10, interpreter='nodejs'
+                            )
+                            scraper.headers.update(custom_headers)
+                        else:
+                            break
+                    except Exception as retry_err:
+                        logger.warning(f"Ryans: Retry {retry+1} error: {retry_err}")
+                        time.sleep(5)
                 
-                if response.status_code == 403:
-                    logger.warning(f"Ryans: Page {page_num} returned 403, waiting 10s...")
-                    time.sleep(10)
-                    response = scraper.get(url, timeout=30)
-                
-                if response.status_code != 200:
-                    logger.error(f"Ryans: Page {page_num} failed with status {response.status_code}")
+                if not response or response.status_code != 200:
+                    logger.error(f"Ryans: Page {page_num} failed with status {response.status_code if response else 'None'}")
                     break
                 
                 # Parse HTML
@@ -532,15 +566,36 @@ def scrape_binary_catalog(category, max_pages=50):
         "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"
     }
     
+    # Enhanced headers to bypass cloud server detection
+    custom_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+        'Referer': 'https://www.google.com/',
+    }
+    
     try:
-        # Create scraper instance
+        # Create scraper instance with enhanced settings
         scraper = cloudscraper.create_scraper(
             browser={
                 'browser': 'chrome',
                 'platform': 'windows',
-                'desktop': True
-            }
+                'desktop': True,
+                'mobile': False
+            },
+            delay=5,
+            interpreter='nodejs'  # Better JS challenge solving
         )
+        scraper.headers.update(custom_headers)
         
         page_num = 1
         # max_pages is now passed as argument
@@ -556,10 +611,30 @@ def scrape_binary_catalog(category, max_pages=50):
             logger.info(f"Binary: Scraping page {page_num} for {category}")
             
             try:
-                response = scraper.get(url, timeout=30)
+                # Retry logic for 403 errors
+                response = None
+                for retry in range(3):
+                    try:
+                        response = scraper.get(url, timeout=45)
+                        if response.status_code == 200:
+                            break
+                        elif response.status_code == 403:
+                            logger.warning(f"Binary: Page {page_num} returned 403 (attempt {retry+1}/3), waiting...")
+                            time.sleep(10 + retry * 5)
+                            # Recreate scraper with fresh session
+                            scraper = cloudscraper.create_scraper(
+                                browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True},
+                                delay=5, interpreter='nodejs'
+                            )
+                            scraper.headers.update(custom_headers)
+                        else:
+                            break
+                    except Exception as retry_err:
+                        logger.warning(f"Binary: Retry {retry+1} error: {retry_err}")
+                        time.sleep(5)
                 
-                if response.status_code != 200:
-                    logger.error(f"Binary: Page {page_num} failed with status {response.status_code}")
+                if not response or response.status_code != 200:
+                    logger.error(f"Binary: Page {page_num} failed with status {response.status_code if response else 'None'}")
                     break
                 
                 soup = BeautifulSoup(response.text, "html.parser")
