@@ -502,7 +502,7 @@ def trigger_update(request):
     
     def run_update():
         """Run update in separate process to avoid connection issues during worker restarts"""
-        import django
+        from django.conf import settings
         from django.db import close_old_connections
         
         try:
@@ -510,14 +510,19 @@ def trigger_update(request):
             cache.set('update_in_progress', True, timeout=3600)
             logger.info("🔄 Manual catalog update triggered via API")
             
-            # Run in subprocess to isolate from parent process/worker lifecycle
-            # This prevents connection issues when gunicorn workers restart
-            manage_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'manage.py')
+            # Find manage.py using Django's BASE_DIR
+            # BASE_DIR is bdpricegear-backend/ directory
+            base_dir = settings.BASE_DIR
+            manage_py = os.path.join(base_dir, 'manage.py')
             
+            logger.info(f"Running command: {sys.executable} {manage_py} populate_catalog")
+            
+            # Run in subprocess to isolate from parent process/worker lifecycle
             process = subprocess.Popen(
                 [sys.executable, manage_py, 'populate_catalog'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                cwd=base_dir,  # Run from Django project directory
                 close_fds=True,  # Don't inherit parent connections
                 env=os.environ.copy()
             )
@@ -527,10 +532,12 @@ def trigger_update(request):
             
             if process.returncode == 0:
                 logger.info("✅ Product update completed successfully")
-                logger.info(f"Output: {stdout.decode('utf-8', errors='ignore')}")
+                if stdout:
+                    logger.info(f"Output: {stdout.decode('utf-8', errors='ignore')[:500]}")  # Log first 500 chars
             else:
                 logger.error(f"❌ Product update failed with code {process.returncode}")
-                logger.error(f"Error: {stderr.decode('utf-8', errors='ignore')}")
+                if stderr:
+                    logger.error(f"Error: {stderr.decode('utf-8', errors='ignore')[:1000]}")  # Log first 1000 chars
             
             # Store update timestamp
             close_old_connections()
@@ -539,6 +546,8 @@ def trigger_update(request):
             
         except Exception as e:
             logger.error(f"Update failed: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             try:
                 close_old_connections()
                 cache.delete('update_in_progress')
