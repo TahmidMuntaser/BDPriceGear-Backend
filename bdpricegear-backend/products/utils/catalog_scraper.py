@@ -51,7 +51,16 @@ def scrape_startech_catalog(category, max_pages=50):
             url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"StarTech: Scraping page {page} for {category}")
             
-            response = requests.get(url, headers=headers, timeout=30)
+            try:
+                response = requests.get(url, headers=headers, timeout=60)  # Increased timeout
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"StarTech: Timeout on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+                
             soup = BeautifulSoup(response.text, "html.parser")
             
             items = soup.select(".p-item")
@@ -262,14 +271,44 @@ def scrape_ultratech_catalog(category, max_pages=50):
         products = []
         logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
         page = 1
-        # max_pages is now passed as argument
         consecutive_empty = 0
+        consecutive_errors = 0
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
         
         while page <= max_pages:
             url = f"{base_url}?route=product/search&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"UltraTech: Scraping page {page} for {category}")
             
-            response = requests.get(url, timeout=30)
+            # Retry logic for timeout issues
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = requests.get(url, headers=headers, timeout=60)  # Increased to 60s
+                    break  # Success, exit retry loop
+                except (requests.Timeout, requests.ConnectionError) as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"UltraTech: Timeout on page {page}, attempt {attempt + 1}/{max_retries}, retrying...")
+                        time.sleep(2)
+                        continue
+                    else:
+                        logger.error(f"UltraTech: Failed after {max_retries} attempts on page {page}: {e}")
+                        consecutive_errors += 1
+                        if consecutive_errors >= 3:
+                            logger.warning(f"UltraTech: Too many errors, stopping at page {page}")
+                            return {"products": products, "logo": logo_url}
+                        page += 1
+                        continue
+            else:
+                # Failed all retries
+                page += 1
+                continue
+            
+            consecutive_errors = 0  # Reset on success
+            
             soup = BeautifulSoup(response.text, "html.parser")
             
             items = soup.select(".product-layout")
@@ -299,14 +338,14 @@ def scrape_ultratech_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(0.3)
+            time.sleep(1)  # Increased delay to avoid overwhelming slow server
         
         logger.info(f"UltraTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
     except Exception as e:
         logger.error(f"UltraTech catalog error: {e}")
-        return {"products": [], "logo": ""}
+        return {"products": products if 'products' in locals() else [], "logo": logo_url if 'logo_url' in locals() else ""}
 
 
 def scrape_potakait_catalog(category, max_pages=50):
@@ -323,7 +362,16 @@ def scrape_potakait_catalog(category, max_pages=50):
             url = f"{base_url}?route=product/search&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PotakaIT: Scraping page {page} for {category}")
             
-            response = requests.get(url, timeout=30)
+            try:
+                response = requests.get(url, timeout=60)  # Increased timeout
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"PotakaIT: Timeout on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+            
             soup = BeautifulSoup(response.text, "html.parser")
             
             items = soup.select(".product-item")
