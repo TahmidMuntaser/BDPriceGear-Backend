@@ -374,9 +374,12 @@ def health_check(request):
     Health check endpoint for monitoring
     Returns database status and product count
     """
-    from django.db import connection
+    from django.db import connection, close_old_connections
     from django.core.cache import cache
     from zoneinfo import ZoneInfo
+    
+    # Close any stale connections before checking
+    close_old_connections()
     
     database_status = "disconnected"
     product_count = 0
@@ -406,6 +409,9 @@ def health_check(request):
     except (Exception, OperationalError) as e:
         logger.warning(f"Health check database query failed: {str(e)}")
         database_status = f"error: {str(e)}"
+    finally:
+        # Ensure connection is closed/returned to pool
+        close_old_connections()
     
     return Response({
         "status": "ok",
@@ -429,8 +435,11 @@ def trigger_update(request):
     """
     from django.core.management import call_command
     from django.core.cache import cache
-    from django.db import connection
+    from django.db import connection, close_old_connections
     import threading
+    
+    # Close stale connections
+    close_old_connections()
     
     update_in_progress = cache.get('update_in_progress', False)
     
@@ -451,6 +460,8 @@ def trigger_update(request):
         except (Exception, OperationalError) as e:
             logger.warning(f"Database query failed: {str(e)}")
             last_update_dhaka = 'Database unavailable'
+        finally:
+            close_old_connections()
 
         return Response({
             "status": "ready",
@@ -477,6 +488,8 @@ def trigger_update(request):
         except (Exception, OperationalError) as e:
             logger.warning(f"Database query failed: {str(e)}")
             last_update_dhaka = 'Database unavailable'
+        finally:
+            close_old_connections()
         
         return Response({
             "status": "already_running",
@@ -486,7 +499,11 @@ def trigger_update(request):
     
     def run_update():
         """Run update in background thread"""
+        from django.db import close_old_connections
         try:
+            # Close any connections from parent thread
+            close_old_connections()
+            
             cache.set('update_in_progress', True, timeout=3600)  # 1 hour timeout
             logger.info("🔄 Manual catalog update triggered via API")
             call_command('populate_catalog')  # Scrape all products from catalog pages
@@ -498,6 +515,9 @@ def trigger_update(request):
         except Exception as e:
             logger.error(f"Update failed: {str(e)}")
             cache.delete('update_in_progress')
+        finally:
+            # Clean up connections in thread
+            close_old_connections()
     
     # Start update in background thread
     thread = threading.Thread(target=run_update, daemon=True)

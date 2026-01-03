@@ -56,6 +56,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.database.DatabaseConnectionMiddleware',  # Close DB connections properly
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -178,29 +179,32 @@ if os.environ.get('DATABASE_URL'):
             )
         }
         DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 10,
-            'options': '-c statement_timeout=30000',  # 30 seconds for transaction pooler
+            'connect_timeout': 15,  # Increased from 10
+            'options': '-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000',
         }
         # Disable server-side cursors for transaction pooler compatibility
         DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
     else:
-        # Session Pooler Configuration (port 5432) - RECOMMENDED for Render
+        # Session Pooler Configuration (port 5432) - RECOMMENDED for Render/Railway
         # Supports persistent connections - better for long-running servers
         DATABASES = {
             'default': dj_database_url.config(
                 default=database_url,
-                conn_max_age=300,  # 5 minutes - keep connections alive to reuse
+                conn_max_age=600,  # 10 minutes - increased for stability
                 conn_health_checks=True,  # Check connection health before reuse
             )
         }
         DATABASES['default']['OPTIONS'] = {
-            'connect_timeout': 10,
+            'connect_timeout': 15,  # Increased from 10
             'keepalives': 1,
             'keepalives_idle': 30,
             'keepalives_interval': 10,
             'keepalives_count': 5,
-            'options': '-c statement_timeout=300000',  # 5 minutes for bulk operations
+            'options': '-c statement_timeout=300000 -c idle_in_transaction_session_timeout=60000',
         }
+        # Enable connection pooling optimization
+        DATABASES['default']['ATOMIC_REQUESTS'] = False  # Don't wrap every view in transaction
+        DATABASES['default']['AUTOCOMMIT'] = True
 else:
     # Local development: Use SQLite
     DATABASES = {
@@ -251,6 +255,20 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# ========================================
+# DATABASE CONNECTION POOL SETTINGS
+# ========================================
+
+# Close database connections after each request if using transaction pooler
+# This is handled by the DatabaseConnectionMiddleware
+if os.environ.get('DATABASE_URL') and ':6543/' in os.environ.get('DATABASE_URL', ''):
+    # Transaction pooler - connections must be closed after each request
+    CONN_MAX_AGE = 0
+else:
+    # Session pooler - keep connections alive
+    CONN_MAX_AGE = 600  # 10 minutes
 
 
 # ========================================
