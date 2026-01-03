@@ -437,6 +437,9 @@ def trigger_update(request):
     from django.core.cache import cache
     from django.db import connection, close_old_connections
     import threading
+    import subprocess
+    import sys
+    import os
     
     # Close stale connections
     close_old_connections()
@@ -498,26 +501,54 @@ def trigger_update(request):
         }, status=200)
     
     def run_update():
-        """Run update in background thread"""
+        """Run update in separate process to avoid connection issues during worker restarts"""
+        import django
         from django.db import close_old_connections
+        
         try:
-            # Close any connections from parent thread
-            close_old_connections()
-            
-            cache.set('update_in_progress', True, timeout=3600)  # 1 hour timeout
+            # Mark update as in progress
+            cache.set('update_in_progress', True, timeout=3600)
             logger.info("🔄 Manual catalog update triggered via API")
-            call_command('populate_catalog')  # Scrape all products from catalog pages
+            
+            # Run in subprocess to isolate from parent process/worker lifecycle
+            # This prevents connection issues when gunicorn workers restart
+            manage_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'manage.py')
+            
+            process = subprocess.Popen(
+                [sys.executable, manage_py, 'populate_catalog'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                close_fds=True,  # Don't inherit parent connections
+                env=os.environ.copy()
+            )
+            
+            # Wait for completion (in background thread)
+            stdout, stderr = process.communicate()
+            
+            if process.returncode == 0:
+                logger.info("✅ Product update completed successfully")
+                logger.info(f"Output: {stdout.decode('utf-8', errors='ignore')}")
+            else:
+                logger.error(f"❌ Product update failed with code {process.returncode}")
+                logger.error(f"Error: {stderr.decode('utf-8', errors='ignore')}")
             
             # Store update timestamp
+            close_old_connections()
             cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
             cache.delete('update_in_progress')
-            logger.info("✅ Product update completed")
+            
         except Exception as e:
             logger.error(f"Update failed: {str(e)}")
-            cache.delete('update_in_progress')
+            try:
+                close_old_connections()
+                cache.delete('update_in_progress')
+            except:
+                pass
         finally:
-            # Clean up connections in thread
-            close_old_connections()
+            try:
+                close_old_connections()
+            except:
+                pass
     
     # Start update in background thread
     thread = threading.Thread(target=run_update, daemon=True)
