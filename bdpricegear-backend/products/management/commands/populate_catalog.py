@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.db import transaction, close_old_connections
 import asyncio
 import logging
+import urllib.parse
 from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 import queue
@@ -14,7 +15,7 @@ from products.models import Product, Shop, Category, PriceHistory
 from products.utils.catalog_scraper import (
     scrape_startech_catalog, scrape_skyland_catalog, scrape_pchouse_catalog,
     scrape_ultratech_catalog, scrape_potakait_catalog,
-    scrape_ryans_catalog, scrape_binary_catalog
+    scrape_ryans_catalog, scrape_binary_catalog, normalize_product_url
 )
 
 
@@ -235,8 +236,14 @@ class Command(BaseCommand):
         updated_count = 0
         now = timezone.now()
         
-        # Extract URLs for this batch
-        product_urls = [p.get('link', '') for p in batch if p.get('link') and p.get('link') not in ['#', 'Link not found', '']]
+        # Normalize URLs to prevent duplicates from pagination parameters
+        # Extract URLs for this batch (after normalization)
+        product_urls = []
+        for p in batch:
+            raw_url = p.get('link', '')
+            if raw_url and raw_url not in ['#', 'Link not found', '']:
+                normalized = normalize_product_url(raw_url)
+                product_urls.append(normalized)
         
         # Fetch existing products for this batch only (not all shop products!)
         existing_by_url = {
@@ -249,14 +256,28 @@ class Command(BaseCommand):
         products_to_create = []
         products_to_update = []
         price_histories = []
+        # Track URLs we're adding in this batch to prevent duplicates within the batch
+        urls_in_batch = set(existing_by_url.keys())
+        
+        products_to_create = []
+        products_to_update = []
+        price_histories = []
         
         for product_data in batch:
             price = product_data.get('price')
-            product_url = product_data.get('link', '')
+            raw_url = product_data.get('link', '')
             product_name = product_data.get('name', 'Unknown Product')[:500]
             
-            if not product_url or product_url in ['#', 'Link not found', '']:
+            if not raw_url or raw_url in ['#', 'Link not found', '']:
                 continue
+            
+            # Normalize the URL to prevent duplicates from pagination
+            product_url = normalize_product_url(raw_url)
+            
+            # Skip if we already processed this URL in this batch
+            if product_url in urls_in_batch and product_url not in existing_by_url:
+                continue
+            urls_in_batch.add(product_url)
             
             if isinstance(price, str) or price == 0 or price is None:
                 stock_status = 'out_of_stock'

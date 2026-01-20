@@ -32,6 +32,47 @@ def normalize_price(text):
         return "Out Of Stock"
 
 
+def normalize_product_url(url):
+    """
+    Normalize product URL by removing pagination and search query parameters.
+    This prevents duplicate products from being created when the same product
+    appears on different search result pages.
+    
+    Examples:
+    - https://example.com/product?search=Keyboard&page=21 -> https://example.com/product
+    - https://example.com/product?id=123&page=5 -> https://example.com/product?id=123
+    """
+    if not url or url in ['#', 'Link not found', '']:
+        return url
+    
+    try:
+        parsed = urllib.parse.urlparse(url)
+        query_params = urllib.parse.parse_qs(parsed.query)
+        
+        # Remove pagination and search-related query parameters
+        params_to_remove = ['page', 'search', 'q', 'keyword', 'sort', 'order', 'limit']
+        filtered_params = {
+            k: v for k, v in query_params.items() 
+            if k.lower() not in params_to_remove
+        }
+        
+        # Rebuild the URL without the removed parameters
+        new_query = urllib.parse.urlencode(filtered_params, doseq=True) if filtered_params else ''
+        normalized = urllib.parse.urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            ''  # Remove fragment
+        ))
+        
+        return normalized
+    except Exception:
+        # If parsing fails, return the original URL
+        return url
+
+
 def scrape_startech_catalog(category, max_pages=50):
     """Scrape all pages from StarTech for a category"""
     try:
@@ -173,19 +214,29 @@ def scrape_skyland_catalog(category, max_pages=50):
                         link_url = urllib.parse.urljoin(base_url, link_url)
                 
                 if name and link_url:
+                    # Normalize URL to prevent duplicates from pagination
+                    normalized_link = normalize_product_url(link_url)
                     products.append({
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
                         "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
                         "img": img_url,
-                        "link": link_url
+                        "link": normalized_link
                     })
             
             page += 1
             time.sleep(0.3)
         
-        logger.info(f"SkyLand: Total scraped {len(products)} products for {category}")
-        return {"products": products, "logo": logo_url}
+        # Remove duplicates based on normalized URL before returning
+        seen_urls = set()
+        unique_products = []
+        for p in products:
+            if p['link'] not in seen_urls:
+                seen_urls.add(p['link'])
+                unique_products.append(p)
+        
+        logger.info(f"SkyLand: Total scraped {len(unique_products)} unique products for {category} (from {len(products)} raw)")
+        return {"products": unique_products, "logo": logo_url}
     
     except Exception as e:
         logger.error(f"SkyLand catalog error: {e}")
