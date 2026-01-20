@@ -26,33 +26,28 @@ def is_product_in_category(product_name, category_name):
     category_lower = category_name.lower()
     
     # Products that are full systems (laptops, desktops, tablets) - should be skipped
-    # when searching for components like RAM, SSD, etc.
     full_system_patterns = [
-        # Laptops
         r'\blaptop\b', r'\bnotebook\b', r'\bmacbook\b', r'\bthinkpad\b',
         r'\bideapad\b', r'\bvivobook\b', r'\bzenbook\b', r'\blegion\b',
         r'\bpredator\b', r'\bnitro\b', r'\btuf gaming\b', r'\bloq\b', r'\byoga\b',
         r'\bchromebook\b', r'\bultrabook\b', r'\bgalaxy book\b',
         r'\balienware\b', r'\bxps\b', r'\blatitude\b', r'\bvostro\b',
-        # Desktops/AIO
         r'\bdesktop\b', r'\ball[- ]?in[- ]?one\b', r'\bimac\b', r'\bmac mini\b',
         r'\bthinkcentre\b', r'\boptiplex\b', r'\bideacentre\b',
         r'\bpc build\b', r'\bbudget pc\b', r'\bgaming pc\b',
-        # Tablets  
         r'\btablet\b', r'\bipad\b', r'\bgalaxy tab\b', r'\bwalpad\b',
         r'\bhonor pad\b', r'\bredmi pad\b', r'\blenovo tab\b', r'\btab m\d',
     ]
     
     is_full_system = any(re.search(p, name_lower) for p in full_system_patterns)
     
-    # Category-specific validation
+    # Category-specific validation - STRICT matching
     if category_lower in ['ram', 'memory']:
-        # For RAM: skip if it's a full system (laptop/tablet with "16GB RAM" in name)
         if is_full_system:
             return False
-        # Must have DDR or be explicitly RAM module
-        ram_indicators = [r'\bddr[345]\b', r'\bdimm\b', r'\bsodimm\b', r'\bmemory module\b', r'\bram kit\b']
-        return any(re.search(p, name_lower) for p in ram_indicators) or 'ram' in name_lower
+        # Must have DDR or specific RAM indicators (word boundary for "ram")
+        ram_indicators = [r'\bddr[345]\b', r'\bdimm\b', r'\bsodimm\b', r'\bmemory module\b', r'\bram kit\b', r'\bram\b']
+        return any(re.search(p, name_lower) for p in ram_indicators)
     
     elif category_lower in ['ssd', 'solid state drive']:
         if is_full_system:
@@ -69,7 +64,6 @@ def is_product_in_category(product_name, category_name):
     elif category_lower in ['processor', 'cpu']:
         if is_full_system:
             return False
-        # Standalone CPU usually doesn't have both RAM and SSD specs
         if re.search(r'\bram\b', name_lower) and re.search(r'\bssd\b', name_lower):
             return False
         return True
@@ -77,38 +71,36 @@ def is_product_in_category(product_name, category_name):
     elif category_lower in ['gpu', 'graphics card']:
         if is_full_system:
             return False
-        gpu_indicators = [r'\bgraphics card\b', r'\bgeforce\b', r'\bradeon\b', r'\brtx\s*\d{4}\b', r'\bgtx\b']
+        gpu_indicators = [r'\bgraphics card\b', r'\bgeforce\b', r'\bradeon\b', r'\brtx\s*\d{4}\b', r'\bgtx\b', r'\bgpu\b']
         return any(re.search(p, name_lower) for p in gpu_indicators)
     
     elif category_lower == 'monitor':
-        # Monitors shouldn't be laptops/tablets
         if is_full_system:
             return False
-        return 'monitor' in name_lower or 'display' in name_lower
+        return re.search(r'\bmonitor\b', name_lower) or re.search(r'\bdisplay\b', name_lower)
     
     elif category_lower == 'motherboard':
         if is_full_system:
             return False
-        return 'motherboard' in name_lower or 'mainboard' in name_lower
+        return re.search(r'\bmotherboard\b', name_lower) or re.search(r'\bmainboard\b', name_lower)
     
     elif category_lower in ['power supply', 'psu']:
         if is_full_system:
             return False
-        return 'power supply' in name_lower or 'psu' in name_lower or 'smps' in name_lower
+        return re.search(r'\bpower supply\b', name_lower) or re.search(r'\bpsu\b', name_lower) or re.search(r'\bsmps\b', name_lower)
     
     elif category_lower in ['cabinet', 'pc case', 'casing']:
-        return 'case' in name_lower or 'cabinet' in name_lower or 'casing' in name_lower
+        return re.search(r'\bcase\b', name_lower) or re.search(r'\bcabinet\b', name_lower) or re.search(r'\bcasing\b', name_lower)
     
     elif category_lower in ['cpu cooler', 'cooler']:
-        return 'cooler' in name_lower or 'heatsink' in name_lower
+        return re.search(r'\bcooler\b', name_lower) or re.search(r'\bheatsink\b', name_lower)
     
     elif category_lower == 'keyboard':
-        return 'keyboard' in name_lower
+        return re.search(r'\bkeyboard\b', name_lower) is not None
     
     elif category_lower == 'mouse':
-        return 'mouse' in name_lower
+        return re.search(r'\bmouse\b', name_lower) is not None
     
-    # Default: allow the product
     return True
 
 

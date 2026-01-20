@@ -175,12 +175,24 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     
     def get_queryset(self):
         """Return all products by default, including unavailable ones."""
+        from django.db.models import Q
+        
         queryset = super().get_queryset()
         
-        # Handle ?product=<name> query parameter
+        # Handle ?product=<name> - search by category first, then by product name
         product_name = self.request.query_params.get('product', None)
         if product_name:
-            queryset = queryset.filter(name__icontains=product_name)
+            search_term = product_name.strip()
+            # First try to match category (most common use case)
+            category_match = queryset.filter(
+                Q(category__name__iexact=search_term) |
+                Q(category__slug__iexact=search_term)
+            )
+            if category_match.exists():
+                queryset = category_match
+            else:
+                # Fall back to product name search
+                queryset = queryset.filter(name__icontains=search_term)
         
         # Optionally filter to show only available products
         only_available = self.request.query_params.get('only_available', 'false').lower() == 'true'
