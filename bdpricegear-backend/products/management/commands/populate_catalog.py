@@ -4,6 +4,7 @@ from django.db import transaction, close_old_connections
 import asyncio
 import logging
 import urllib.parse
+import re
 from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 import queue
@@ -17,6 +18,98 @@ from products.utils.catalog_scraper import (
     scrape_ultratech_catalog, scrape_potakait_catalog,
     scrape_ryans_catalog, scrape_binary_catalog, normalize_product_url
 )
+
+
+def is_product_in_category(product_name, category_name):
+    
+    name_lower = product_name.lower()
+    category_lower = category_name.lower()
+    
+    # Products that are full systems (laptops, desktops, tablets) - should be skipped
+    # when searching for components like RAM, SSD, etc.
+    full_system_patterns = [
+        # Laptops
+        r'\blaptop\b', r'\bnotebook\b', r'\bmacbook\b', r'\bthinkpad\b',
+        r'\bideapad\b', r'\bvivobook\b', r'\bzenbook\b', r'\blegion\b',
+        r'\bpredator\b', r'\bnitro\b', r'\btuf gaming\b', r'\bloq\b', r'\byoga\b',
+        r'\bchromebook\b', r'\bultrabook\b', r'\bgalaxy book\b',
+        r'\balienware\b', r'\bxps\b', r'\blatitude\b', r'\bvostro\b',
+        # Desktops/AIO
+        r'\bdesktop\b', r'\ball[- ]?in[- ]?one\b', r'\bimac\b', r'\bmac mini\b',
+        r'\bthinkcentre\b', r'\boptiplex\b', r'\bideacentre\b',
+        r'\bpc build\b', r'\bbudget pc\b', r'\bgaming pc\b',
+        # Tablets  
+        r'\btablet\b', r'\bipad\b', r'\bgalaxy tab\b', r'\bwalpad\b',
+        r'\bhonor pad\b', r'\bredmi pad\b', r'\blenovo tab\b', r'\btab m\d',
+    ]
+    
+    is_full_system = any(re.search(p, name_lower) for p in full_system_patterns)
+    
+    # Category-specific validation
+    if category_lower in ['ram', 'memory']:
+        # For RAM: skip if it's a full system (laptop/tablet with "16GB RAM" in name)
+        if is_full_system:
+            return False
+        # Must have DDR or be explicitly RAM module
+        ram_indicators = [r'\bddr[345]\b', r'\bdimm\b', r'\bsodimm\b', r'\bmemory module\b', r'\bram kit\b']
+        return any(re.search(p, name_lower) for p in ram_indicators) or 'ram' in name_lower
+    
+    elif category_lower in ['ssd', 'solid state drive']:
+        if is_full_system:
+            return False
+        ssd_indicators = [r'\bssd\b', r'\bnvme\b', r'\bm\.2\b', r'\bsolid state\b']
+        return any(re.search(p, name_lower) for p in ssd_indicators)
+    
+    elif category_lower in ['hdd', 'hard disk', 'hard drive']:
+        if is_full_system:
+            return False
+        hdd_indicators = [r'\bhdd\b', r'\bhard drive\b', r'\bhard disk\b', r'\b\d+\s*rpm\b']
+        return any(re.search(p, name_lower) for p in hdd_indicators)
+    
+    elif category_lower in ['processor', 'cpu']:
+        if is_full_system:
+            return False
+        # Standalone CPU usually doesn't have both RAM and SSD specs
+        if re.search(r'\bram\b', name_lower) and re.search(r'\bssd\b', name_lower):
+            return False
+        return True
+    
+    elif category_lower in ['gpu', 'graphics card']:
+        if is_full_system:
+            return False
+        gpu_indicators = [r'\bgraphics card\b', r'\bgeforce\b', r'\bradeon\b', r'\brtx\s*\d{4}\b', r'\bgtx\b']
+        return any(re.search(p, name_lower) for p in gpu_indicators)
+    
+    elif category_lower == 'monitor':
+        # Monitors shouldn't be laptops/tablets
+        if is_full_system:
+            return False
+        return 'monitor' in name_lower or 'display' in name_lower
+    
+    elif category_lower == 'motherboard':
+        if is_full_system:
+            return False
+        return 'motherboard' in name_lower or 'mainboard' in name_lower
+    
+    elif category_lower in ['power supply', 'psu']:
+        if is_full_system:
+            return False
+        return 'power supply' in name_lower or 'psu' in name_lower or 'smps' in name_lower
+    
+    elif category_lower in ['cabinet', 'pc case', 'casing']:
+        return 'case' in name_lower or 'cabinet' in name_lower or 'casing' in name_lower
+    
+    elif category_lower in ['cpu cooler', 'cooler']:
+        return 'cooler' in name_lower or 'heatsink' in name_lower
+    
+    elif category_lower == 'keyboard':
+        return 'keyboard' in name_lower
+    
+    elif category_lower == 'mouse':
+        return 'mouse' in name_lower
+    
+    # Default: allow the product
+    return True
 
 
 class Command(BaseCommand):
@@ -234,7 +327,11 @@ class Command(BaseCommand):
         """Save a small batch of products - runs within a transaction"""
         created_count = 0
         updated_count = 0
+        skipped_count = 0
         now = timezone.now()
+        
+        # Get category name for filtering
+        category_name = category.name if category else ''
         
         # Normalize URLs to prevent duplicates from pagination parameters
         # Extract URLs for this batch (after normalization)
@@ -259,10 +356,6 @@ class Command(BaseCommand):
         # Track URLs we're adding in this batch to prevent duplicates within the batch
         urls_in_batch = set(existing_by_url.keys())
         
-        products_to_create = []
-        products_to_update = []
-        price_histories = []
-        
         for product_data in batch:
             price = product_data.get('price')
             raw_url = product_data.get('link', '')
@@ -278,6 +371,12 @@ class Command(BaseCommand):
             if product_url in urls_in_batch and product_url not in existing_by_url:
                 continue
             urls_in_batch.add(product_url)
+            
+            # Skip products that don't actually belong to this category
+            # (e.g., laptops appearing in RAM search because they have "16GB RAM" in name)
+            if category_name and not is_product_in_category(product_name, category_name):
+                skipped_count += 1
+                continue
             
             if isinstance(price, str) or price == 0 or price is None:
                 stock_status = 'out_of_stock'
