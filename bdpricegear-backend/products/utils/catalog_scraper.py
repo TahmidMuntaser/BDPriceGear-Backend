@@ -193,7 +193,8 @@ def scrape_skyland_catalog(category, max_pages=50):
             
             for item in items:
                 name = item.select_one(".name")
-                price = item.select_one(".price-new")
+                # Try multiple price selectors - SkyLand uses different classes
+                price = item.select_one(".price-new") or item.select_one(".price-normal") or item.select_one(".price")
                 img = item.select_one(".image img") or item.select_one(".product-img img") or item.select_one("img")
                 link = item.select_one(".product-img") or item.select_one(".name a")
                 
