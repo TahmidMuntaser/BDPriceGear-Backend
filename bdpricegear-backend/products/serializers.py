@@ -94,3 +94,17 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         if history.exists():
             return round(sum(float(h.price) for h in history) / len(history), 2)
         return float(obj.current_price)
+
+
+class PopularProductSerializer(serializers.Serializer):
+    
+    #Lightweight serializer for the popular-products endpoint.
+    #Accepts a dict produced by a raw SQL query (no ORM model instance required).
+    
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    category_name = serializers.CharField()
+    category_slug = serializers.CharField()
+    current_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    image_url = serializers.URLField()
+    shop_name = serializers.CharField()

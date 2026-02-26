@@ -1,11 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    price_comparison, 
+    price_comparison,
     ProductViewSet, CategoryViewSet, ShopViewSet,
     health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
-    run_migrations
+    run_migrations, popular_products
 )
 
 router = DefaultRouter()
@@ -29,7 +29,9 @@ urlpatterns = [
     path('cleanup/products/', cleanup_old_products, name='cleanup-old-products'),
     
     path('migrate/', run_migrations, name='run-migrations'),
-    
+
+    path('popular-products/', popular_products, name='popular-products'),
+
     path('', include(router.urls)),
 ]
 

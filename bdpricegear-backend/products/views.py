@@ -16,7 +16,7 @@ from .utils.scraper import (
 from .models import Product, Category, Shop
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer,
-    CategorySerializer, ShopSerializer
+    CategorySerializer, ShopSerializer, PopularProductSerializer
 )
 from .filters import ProductFilter
 
@@ -855,6 +855,142 @@ def cleanup_old_products(request):
         "timestamp": timezone.now().isoformat(),
         "note": "Deleting products not updated in 6 months"
     }, status=202)
+
+
+# ========================================
+# POPULAR PRODUCTS API
+# ========================================
+
+TARGET_CATEGORIES = [
+    'Mouse', 'Keyboard', 'Processor', 'GPU', 'RAM', 'Monitor',
+    'Motherboard', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'CPU Cooler',
+]
+
+
+@swagger_auto_schema(
+    method='get',
+    operation_description=(
+        "Returns one randomly selected product from each major category "
+        "(Mouse, Keyboard, Processor, GPU, RAM, Monitor, Motherboard, SSD, "
+        "HDD, Power Supply, Cabinet, CPU Cooler). "
+        "Only products with an image and a positive price are included. "
+        "Random selection is performed at the database level for performance."
+    ),
+    responses={
+        200: openapi.Response(
+            description="List of popular products (one per category, up to 12)",
+            schema=openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'id':            openapi.Schema(type=openapi.TYPE_INTEGER),
+                        'name':          openapi.Schema(type=openapi.TYPE_STRING),
+                        'category_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        'category_slug': openapi.Schema(type=openapi.TYPE_STRING),
+                        'current_price': openapi.Schema(type=openapi.TYPE_NUMBER),
+                        'image_url':     openapi.Schema(type=openapi.TYPE_STRING),
+                        'shop_name':     openapi.Schema(type=openapi.TYPE_STRING),
+                    },
+                ),
+            ),
+        ),
+    },
+)
+@api_view(['GET'])
+def popular_products(request):
+    """
+    GET /api/popular-products/
+
+    Returns one randomly selected product per major category using a single
+    database-level random query (DISTINCT ON for PostgreSQL, window function
+    for SQLite).  Only products that have both an image_url and a positive
+    current_price are eligible.
+    """
+    from django.db import connection
+    from django.conf import settings
+
+    engine = settings.DATABASES['default']['ENGINE']
+    is_postgres = 'postgresql' in engine or 'psycopg' in engine
+
+    placeholders = ', '.join(['%s'] * len(TARGET_CATEGORIES))
+
+    if is_postgres:
+        # PostgreSQL: DISTINCT ON keeps the first row per category_id after
+        # ORDER BY category_id, RANDOM() – a single fast index scan.
+        sql = f"""
+            SELECT DISTINCT ON (p.category_id)
+                p.id,
+                p.name,
+                p.current_price,
+                p.image_url,
+                c.name  AS category_name,
+                c.slug  AS category_slug,
+                s.name  AS shop_name
+            FROM   products_product  p
+            INNER JOIN products_category c ON c.id = p.category_id
+            INNER JOIN products_shop     s ON s.id = p.shop_id
+            WHERE  p.image_url    IS NOT NULL
+              AND  p.image_url    != ''
+              AND  p.current_price > 0
+              AND  c.name IN ({placeholders})
+            ORDER BY p.category_id, RANDOM()
+            LIMIT 12
+        """
+    else:
+        # SQLite 3.25+ supports window functions.
+        # ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY RANDOM())
+        # gives each product a rank within its category; keeping rank = 1
+        # picks exactly one random product per category.
+        sql = f"""
+            SELECT id, name, current_price, image_url,
+                   category_name, category_slug, shop_name
+            FROM (
+                SELECT
+                    p.id,
+                    p.name,
+                    p.current_price,
+                    p.image_url,
+                    c.name  AS category_name,
+                    c.slug  AS category_slug,
+                    s.name  AS shop_name,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p.category_id
+                        ORDER BY RANDOM()
+                    ) AS rn
+                FROM   products_product  p
+                INNER JOIN products_category c ON c.id = p.category_id
+                INNER JOIN products_shop     s ON s.id = p.shop_id
+                WHERE  p.image_url    IS NOT NULL
+                  AND  p.image_url    != ''
+                  AND  p.current_price > 0
+                  AND  c.name IN ({placeholders})
+            ) ranked
+            WHERE rn = 1
+            LIMIT 12
+        """
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, TARGET_CATEGORIES)
+            columns = [col[0] for col in cursor.description]
+            rows = cursor.fetchall()
+
+        products_data = [
+            dict(zip(columns, row))
+            for row in rows
+        ]
+
+        serializer = PopularProductSerializer(products_data, many=True)
+        return Response(serializer.data)
+
+    except Exception as exc:
+        logger.error(f"popular_products query failed: {exc}")
+        return Response(
+            {"error": "Failed to fetch popular products."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 @api_view(['POST'])
 def run_migrations(request):
