@@ -28,7 +28,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "unsafe-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = ['bdpricegear.onrender.com', 'localhost', '127.0.0.1', '*.railway.app']
+ALLOWED_HOSTS = ['bdpricegear.onrender.com', 'bdpricegear-scraper.onrender.com', 'localhost', '127.0.0.1', '*.railway.app']
 
 # Security Settings for Production
 if not DEBUG:
@@ -103,6 +103,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8080",
     "https://bdpricegear.vercel.app",  
     "https://bdpricegear.onrender.com",
+    "https://bdpricegear-scraper.onrender.com",
 ]
 
 # For development, you can also use CORS_ALLOW_ALL_ORIGINS = True (but not for production)
