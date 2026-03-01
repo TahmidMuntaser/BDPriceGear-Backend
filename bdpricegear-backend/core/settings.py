@@ -56,17 +56,7 @@ if not DEBUG:
 import os
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# Django 5.x+ uses STORAGES instead of STATICFILES_STORAGE
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        # Use CompressedStaticFilesStorage instead of Manifest version to avoid missing file errors
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
-    },
-}
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 
 # Application definition
