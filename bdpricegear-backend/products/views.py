@@ -1,7 +1,8 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, permissions
 from rest_framework.decorators import action
+from rest_framework.throttling import AnonRateThrottle
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
@@ -23,10 +24,17 @@ from .filters import ProductFilter
 import asyncio
 import logging
 import time
+import os
+import threading
 from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("products.views")
+
+
+class ScrapingRateThrottle(AnonRateThrottle):
+    """Rate limit for scraping endpoints - 3 requests per hour per IP"""
+    rate = '3/hour'
 
 @swagger_auto_schema(
     method='get',
@@ -381,6 +389,7 @@ def compare_product_prices(request, product_id):
 
 
 @api_view(['GET'])
+@permission_classes([permissions.AllowAny])
 def health_check(request):
     """
     Health check endpoint for monitoring
@@ -439,6 +448,8 @@ def health_check(request):
 
 
 @api_view(['POST', 'GET'])
+@permission_classes([permissions.AllowAny])
+@throttle_classes([ScrapingRateThrottle])
 def trigger_update(request):
     """
     Manually trigger product update
@@ -453,7 +464,14 @@ def trigger_update(request):
     # Close stale connections
     close_old_connections()
     
-    update_in_progress = cache.get('update_in_progress', False)
+    # Get cache status (with fallback for cache setup issues)
+    try:
+        update_in_progress = cache.get('update_in_progress', False)
+        last_error = cache.get('last_scraping_error', None)
+    except Exception as cache_error:
+        logger.error(f"Cache error: {cache_error}. Cache might not be set up. Run: python manage.py createcachetable")
+        update_in_progress = False
+        last_error = str(cache_error)
     
     if request.method == 'GET':
         # Get last update from database (most recent product updated_at)
@@ -475,14 +493,21 @@ def trigger_update(request):
         finally:
             close_old_connections()
 
-        return Response({
+        response_data = {
             "status": "ready",
             "message": "POST to trigger update",
             "last_update": last_update_dhaka,
             "update_in_progress": update_in_progress,
-            "endpoint": "/api/products/update/",
+            "endpoint": "/api/update/",
             "method": "POST"
-        })
+        }
+        
+        # Include last error if exists
+        if last_error:
+            response_data["last_error"] = last_error
+            response_data["error_help"] = "If cache error, run: python manage.py createcachetable"
+        
+        return Response(response_data)
     
     # POST request - trigger update in background
     if update_in_progress:
@@ -514,11 +539,18 @@ def trigger_update(request):
         from django.core.management import call_command
         from django.db import close_old_connections, connection
         import io
+        import traceback
         
         try:
             # Mark update as in progress
-            cache.set('update_in_progress', True, timeout=3600)
+            try:
+                cache.set('update_in_progress', True, timeout=3600)
+                cache.delete('last_scraping_error')  # Clear previous errors
+            except Exception as cache_err:
+                logger.error(f"Cache error during update start: {cache_err}")
+            
             logger.info("🔄 Manual catalog update triggered via API")
+            logger.info(f"Worker PID: {os.getpid()}, Thread: {threading.current_thread().name}")
             
             # Close any inherited connections - thread will create fresh ones
             close_old_connections()
@@ -529,34 +561,53 @@ def trigger_update(request):
             
             try:
                 # Run Django management command directly
+                logger.info("Starting populate_catalog command...")
                 call_command('populate_catalog', stdout=stdout_capture, stderr=stderr_capture)
                 
                 logger.info("✅ Product update completed successfully")
                 output = stdout_capture.getvalue()
                 if output:
                     logger.info(f"Output: {output[:500]}")
+                
+                # Store success timestamp
+                try:
+                    cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
+                    cache.set('last_update_status', 'success', timeout=None)
+                except Exception as cache_err:
+                    logger.error(f"Cache error during success save: {cache_err}")
                     
             except Exception as cmd_error:
-                logger.error(f"❌ Command failed: {str(cmd_error)}")
+                error_msg = str(cmd_error)
+                logger.error(f"❌ Command failed: {error_msg}")
                 error_output = stderr_capture.getvalue()
                 if error_output:
-                    logger.error(f"Stderr: {error_output[:500]}")
+                    logger.error(f"Stderr: {error_output[:1000]}")
+                
+                # Store error details in cache
+                try:
+                    cache.set('last_scraping_error', f"{error_msg}\n{error_output[:500]}", timeout=86400)
+                    cache.set('last_update_status', 'failed', timeout=None)
+                except Exception as cache_err:
+                    logger.error(f"Cache error during error save: {cache_err}")
+                
                 raise
             
-            # Store update timestamp
+            # Clear in-progress flag
             close_old_connections()
-            cache.set('last_product_update', timezone.now().isoformat(), timeout=None)
-            cache.delete('update_in_progress')
+            try:
+                cache.delete('update_in_progress')
+            except Exception as cache_err:
+                logger.error(f"Cache error during cleanup: {cache_err}")
             
         except Exception as e:
             logger.error(f"Update failed: {str(e)}")
-            import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             try:
                 close_old_connections()
                 cache.delete('update_in_progress')
-            except:
-                pass
+                cache.set('last_scraping_error', traceback.format_exc()[:1000], timeout=86400)
+            except Exception as cache_err:
+                logger.error(f"Failed to clean up after error: {cache_err}")
         finally:
             try:
                 close_old_connections()
@@ -564,18 +615,34 @@ def trigger_update(request):
                 pass
     
     # Start update in background thread
-    thread = threading.Thread(target=run_update, daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=run_update, daemon=True)
+        thread.start()
+        logger.info(f"✅ Background thread started successfully (Thread ID: {thread.ident})")
+    except Exception as thread_error:
+        logger.error(f"Failed to start background thread: {thread_error}")
+        try:
+            cache.delete('update_in_progress')
+        except:
+            pass
+        return Response({
+            "status": "error",
+            "message": "Failed to start background update",
+            "error": str(thread_error)
+        }, status=500)
     
     return Response({
         "status": "started",
         "message": "✅ Product update started in background",
         "timestamp": timezone.now().isoformat(),
-        "note": "Check GET /api/update/ for status"
+        "note": "Check GET /api/update/ for status",
+        "help": "If this consistently fails, check logs or run: python manage.py populate_catalog"
     }, status=202)  # 202 Accepted - processing started
 
 
 @api_view(['POST', 'GET'])
+@permission_classes([permissions.AllowAny])
+@throttle_classes([ScrapingRateThrottle])
 def cleanup_old_data(request):
     """
     Cleanup old price history data (3 months+)
@@ -657,6 +724,8 @@ def cleanup_old_data(request):
 
 
 @api_view(['POST', 'GET'])
+@permission_classes([permissions.AllowAny])
+@throttle_classes([ScrapingRateThrottle])
 def trigger_catalog_update(request):
     """
     Trigger catalog update (scrapes all pages from all websites)
@@ -781,6 +850,8 @@ def trigger_catalog_update(request):
 
 
 @api_view(['POST', 'GET'])
+@permission_classes([permissions.AllowAny])
+@throttle_classes([ScrapingRateThrottle])
 def cleanup_old_products(request):
     """
     Cleanup products not updated in 6 months
