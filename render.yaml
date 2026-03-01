@@ -1,0 +1,49 @@
+# render.yaml - Multiple Services Configuration
+# This file allows you to deploy both services from one repo
+
+services:
+  # Service 1: Main API Server (User-facing)
+  - type: web
+    name: bdpricegear
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: False
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENABLE_SCRAPING_ENDPOINTS
+        value: False  # Disable scraping on main API
+
+  # Service 2: Scraper Worker (Background tasks only)
+  - type: web
+    name: bdpricegear-scraper
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install --no-cache-dir -r requirements.txt && playwright install chromium
+    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 600 --workers 1
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: False
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENABLE_SCRAPING_ENDPOINTS
+        value: True  # Enable scraping on this service
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/.playwright

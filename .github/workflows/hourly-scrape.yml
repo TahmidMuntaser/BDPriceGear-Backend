@@ -11,10 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Trigger Product Update
+      - name: Trigger Product Update on Scraper Service
         run: |
           echo "Triggering product update at $(date)"
-          curl -X POST https://bdpricegear.onrender.com/api/update/ \
+          echo "Target: Dedicated Scraper Service (bdpricegear-scraper)"
+          curl -X POST https://bdpricegear-scraper.onrender.com/api/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n"
-          echo "Update triggered successfully!"
+            -w "\nHTTP Status: %{http_code}\n" \
+            --max-time 10 \
+            --retry 2
+          echo "Update triggered successfully on scraper service!"
+          echo "Main API server (bdpricegear) remains available for users."
