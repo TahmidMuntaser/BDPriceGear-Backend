@@ -47,3 +47,5 @@ services:
         value: True  # Enable scraping on this service
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/.playwright
+      - key: SCRAPER_MAX_WORKERS
+        value: 2  # Limit concurrent scrapers to avoid OOM (512 MB limit)
