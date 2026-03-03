@@ -5,6 +5,7 @@ import asyncio
 import logging
 import urllib.parse
 import re
+import os
 from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 import queue
@@ -254,7 +255,9 @@ class Command(BaseCommand):
                 ('Binary', scrape_binary_catalog),
             ]
 
-            with ThreadPoolExecutor(max_workers=7) as executor:
+            # Reduce workers for Render free tier (512 MB limit) - was 7
+            max_workers = int(os.environ.get('SCRAPER_MAX_WORKERS', '2'))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {executor.submit(scraper, cat, max_pages): name for name, scraper in scrapers}
 
                 for future in futures:
