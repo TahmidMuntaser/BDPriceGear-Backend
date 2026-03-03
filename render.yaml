@@ -9,7 +9,7 @@ services:
     region: singapore
     plan: free
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --workers 2
+    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && mkdir -p staticfiles && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --workers 2
     envVars:
       - key: SECRET_KEY
         sync: false
@@ -31,7 +31,7 @@ services:
     region: singapore
     plan: free
     buildCommand: pip install --no-cache-dir -r requirements.txt && playwright install chromium
-    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 600 --workers 1
+    startCommand: cd bdpricegear-backend && python manage.py createcachetable 2>/dev/null || true && mkdir -p staticfiles && python manage.py collectstatic --noinput && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --timeout 600 --workers 1
     envVars:
       - key: SECRET_KEY
         sync: false
