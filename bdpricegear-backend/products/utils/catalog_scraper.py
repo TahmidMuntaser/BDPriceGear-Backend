@@ -4,6 +4,7 @@ import re
 import uuid
 import urllib.parse
 import time
+import random
 
 from bs4 import BeautifulSoup
 import requests
@@ -11,6 +12,37 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("catalog_scraper")
+
+# Rotating user agents to avoid detection
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+]
+
+def get_random_user_agent():
+    # Return a random user agent to avoid detection
+    return random.choice(USER_AGENTS)
+
+def create_session():
+    """Create a requests session with connection pooling and retry logic"""
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=10,
+        pool_maxsize=20,
+        max_retries=3,
+        pool_block=False
+    )
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+def smart_delay(min_delay=1.0, max_delay=3.0):
+    """Random delay between requests to avoid rate limiting"""
+    delay = random.uniform(min_delay, max_delay)
+    time.sleep(delay)
 
 try:
     import cloudscraper
@@ -75,27 +107,43 @@ def normalize_product_url(url):
 
 def scrape_startech_catalog(category, max_pages=50):
     """Scrape all pages from StarTech for a category"""
+    session = create_session()
     try:
         base_url = "https://www.startech.com.bd/product/search"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        
         products = []
         logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
         page = 1
-        # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
             url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"StarTech: Scraping page {page} for {category}")
             
-            try:
-                response = requests.get(url, headers=headers, timeout=60)  # Increased timeout
-            except (requests.Timeout, requests.ConnectionError) as e:
-                logger.warning(f"StarTech: Timeout on page {page}: {e}")
+            headers = {
+                "User-Agent": get_random_user_agent(),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": "https://www.startech.com.bd/"
+            }
+            
+            retry_count = 0
+            max_retries = 3
+            response = None
+            
+            while retry_count < max_retries:
+                try:
+                    response = session.get(url, headers=headers, timeout=30)
+                    if response.status_code == 200:
+                        break
+                    logger.warning(f"StarTech: Page {page} returned {response.status_code}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(2, 4)
+                    retry_count += 1
+                except (requests.Timeout, requests.ConnectionError) as e:
+                    logger.warning(f"StarTech: Connection error on page {page}: {e}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(3, 6)
+                    retry_count += 1
+            
+            if not response or response.status_code != 200:
                 consecutive_empty += 1
                 if consecutive_empty >= 2:
                     break
@@ -131,23 +179,25 @@ def scrape_startech_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(0.3)
+            smart_delay(1.0, 2.5)  # Random delay to avoid rate limiting
         
         logger.info(f"StarTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
     except Exception as e:
-        logger.error(f"StarTech catalog error: {e}")
+        logger.error(f"StarTech catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_skyland_catalog(category, max_pages=50):
     """Scrape all pages from SkyLand for a category"""
+    session = create_session()
     try:
         base_url = "https://www.skyland.com.bd/"
         products = []
         page = 1
-        # max_pages is now passed as argument
         consecutive_empty = 0
         
         logo = None
@@ -157,20 +207,32 @@ def scrape_skyland_catalog(category, max_pages=50):
             url = f"{base_url}index.php?route=product/search&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"SkyLand: Scraping page {page} for {category}")
             
-            try:
-                response = requests.get(url, timeout=30, allow_redirects=True)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, "html.parser")
-            except requests.exceptions.Timeout:
-                logger.warning(f"SkyLand: Timeout on page {page}, retrying once...")
+            headers = {
+                "User-Agent": get_random_user_agent(),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.skyland.com.bd/"
+            }
+            
+            retry_count = 0
+            max_retries = 3
+            soup = None
+            
+            while retry_count < max_retries:
                 try:
-                    response = requests.get(url, timeout=45)
-                    soup = BeautifulSoup(response.text, "html.parser")
-                except Exception as retry_err:
-                    logger.error(f"SkyLand: Retry failed on page {page}: {retry_err}")
-                    break
-            except Exception as e:
-                logger.error(f"SkyLand: Error on page {page}: {e}")
+                    response = session.get(url, headers=headers, timeout=30, allow_redirects=True)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, "html.parser")
+                        break
+                    logger.warning(f"SkyLand: Page {page} returned {response.status_code}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(2, 5)
+                    retry_count += 1
+                except (requests.exceptions.Timeout, requests.ConnectionError) as e:
+                    logger.warning(f"SkyLand: Connection error on page {page}: {e}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(3, 6)
+                    retry_count += 1
+            
+            if not soup:
+                logger.error(f"SkyLand: Failed to fetch page {page} after {max_retries} retries")
                 break
             
             if page == 1 and not logo:
@@ -226,7 +288,7 @@ def scrape_skyland_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(0.3)
+            smart_delay(1.0, 2.5)  # Random delay
         
         # Remove duplicates based on normalized URL before returning
         seen_urls = set()
@@ -306,7 +368,7 @@ def scrape_pchouse_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(0.3)
+            smart_delay(1.5, 3.0)  # Longer delay for PcHouse
         
         logger.info(f"PcHouse: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -390,7 +452,7 @@ def scrape_ultratech_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(1)  # Increased delay to avoid overwhelming slow server
+            smart_delay(1.0, 2.5)  # Random delay to avoid rate limiting
         
         logger.info(f"UltraTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -403,15 +465,15 @@ def scrape_ultratech_catalog(category, max_pages=50):
 def scrape_potakait_catalog(category, max_pages=50):
     """Scrape all pages from PotakaIT for a category"""
     try:
-        base_url = "https://www.potakait.com/index.php"
+        base_url = "https://potakait.com/product/search"
         products = []
-        logo_url = "https://www.potakait.com/image/catalog/logo.png"
+        logo_url = "https://potakait.com/image/catalog/logo.png"
         page = 1
         # max_pages is now passed as argument
         consecutive_empty = 0
         
         while page <= max_pages:
-            url = f"{base_url}?route=product/search&search={urllib.parse.quote(category)}&page={page}"
+            url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PotakaIT: Scraping page {page} for {category}")
             
             try:
@@ -438,10 +500,10 @@ def scrape_potakait_catalog(category, max_pages=50):
             consecutive_empty = 0
             
             for item in items:
-                name = item.select_one(".title a")
+                name = item.select_one("h2.title a")
                 price = item.select_one(".price:not(.old)")
                 img = item.select_one(".product-img img")
-                link = item.select_one(".title a")
+                link = item.select_one("h2.title a")
                 
                 if name and link:
                     products.append({
@@ -453,13 +515,13 @@ def scrape_potakait_catalog(category, max_pages=50):
                     })
             
             page += 1
-            time.sleep(0.3)
+            smart_delay(1.5, 3.0)  # Longer delay for PotakaIT
         
         logger.info(f"PotakaIT: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
     except Exception as e:
-        logger.error(f"PotakaIT catalog error: {e}")
+        logger.error(f"PotakaIT catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
 
 
@@ -540,6 +602,7 @@ def scrape_ryans_catalog(category, max_pages=50):
                 
                 if not response or response.status_code != 200:
                     logger.error(f"Ryans: Page {page_num} failed with status {response.status_code if response else 'None'}")
+                    logger.info(f"Ryans: Cloudflare blocking detected. Skipping remaining pages.")
                     break
                 
                 # Parse HTML
@@ -567,7 +630,7 @@ def scrape_ryans_catalog(category, max_pages=50):
                 
                 # Extract product data
                 for item in items:
-                    name_elem = item.select_one(".card-body .card-text a")
+                    name_elem = item.select_one(".product-title a")
                     price_elem = item.select_one(".pr-text")
                     link_elem = item.select_one(".image-box a")
                     img_elem = item.select_one(".image-box img")
@@ -687,6 +750,7 @@ def scrape_binary_catalog(category, max_pages=50):
                 
                 if not response or response.status_code != 200:
                     logger.error(f"Binary: Page {page_num} failed with status {response.status_code if response else 'None'}")
+                    logger.info(f"Binary: Cloudflare blocking detected. Skipping remaining pages.")
                     break
                 
                 soup = BeautifulSoup(response.text, "html.parser")
@@ -721,7 +785,7 @@ def scrape_binary_catalog(category, max_pages=50):
                         })
                 
                 page_num += 1
-                time.sleep(1)
+                smart_delay(1.5, 3.0)  # Random delay to avoid rate limiting
                 
             except Exception as e:
                 logger.error(f"Binary: Error on page {page_num}: {e}")
