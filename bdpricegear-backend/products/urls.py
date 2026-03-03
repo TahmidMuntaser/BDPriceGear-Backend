@@ -5,7 +5,7 @@ from .views import (
     ProductViewSet, CategoryViewSet, ShopViewSet,
     health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
-    run_migrations, popular_products
+    run_migrations, popular_products, reset_scraping_lock
 )
 import os
 
@@ -33,5 +33,6 @@ if ENABLE_SCRAPING:
         path('cleanup/', cleanup_old_data, name='cleanup-old-data'),
         path('cleanup/products/', cleanup_old_products, name='cleanup-old-products'),
         path('migrate/', run_migrations, name='run-migrations'),
+        path('reset-scraping-lock/', reset_scraping_lock, name='reset-scraping-lock'),
     ]
 

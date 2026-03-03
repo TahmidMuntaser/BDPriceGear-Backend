@@ -928,6 +928,38 @@ def cleanup_old_products(request):
     }, status=202)
 
 
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def reset_scraping_lock(request):
+    """
+    Emergency endpoint to clear stuck scraping cache locks
+    POST /api/reset-scraping-lock/
+    """
+    from django.core.cache import cache
+    
+    try:
+        cache.delete('update_in_progress')
+        cache.delete('catalog_update_in_progress')
+        cache.delete('cleanup_in_progress')
+        cache.delete('product_cleanup_in_progress')
+        
+        return Response({
+            "status": "success",
+            "message": "✅ All scraping locks cleared",
+            "cleared_locks": [
+                "update_in_progress",
+                "catalog_update_in_progress", 
+                "cleanup_in_progress",
+                "product_cleanup_in_progress"
+            ]
+        }, status=200)
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "message": f"Failed to clear locks: {str(e)}"
+        }, status=500)
+
+
 # ========================================
 # POPULAR PRODUCTS API
 # ========================================
