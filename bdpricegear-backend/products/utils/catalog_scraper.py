@@ -465,19 +465,18 @@ def scrape_ultratech_catalog(category, max_pages=50):
 def scrape_potakait_catalog(category, max_pages=50):
     """Scrape all pages from PotakaIT for a category"""
     try:
-        base_url = "https://potakait.com/product/search"
         products = []
         logo_url = "https://potakait.com/image/catalog/logo.png"
         page = 1
-        # max_pages is now passed as argument
         consecutive_empty = 0
+        headers = {"User-Agent": get_random_user_agent()}
         
         while page <= max_pages:
-            url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
+            url = f"https://potakait.com/product/search?&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PotakaIT: Scraping page {page} for {category}")
             
             try:
-                response = requests.get(url, timeout=60)  # Increased timeout
+                response = requests.get(url, headers=headers, timeout=60)
             except (requests.Timeout, requests.ConnectionError) as e:
                 logger.warning(f"PotakaIT: Timeout on page {page}: {e}")
                 consecutive_empty += 1
@@ -500,22 +499,29 @@ def scrape_potakait_catalog(category, max_pages=50):
             consecutive_empty = 0
             
             for item in items:
-                name = item.select_one("h2.title a")
-                price = item.select_one(".price:not(.old)")
-                img = item.select_one(".product-img img")
-                link = item.select_one("h2.title a")
+                name_tag = item.select_one(".title a")
+                price_tag = item.select_one(".price-info .price")
+                img_tag = item.select_one(".product-img img")
+                stock_tag = item.select_one(".add-to-cart")
                 
-                if name and link:
-                    products.append({
-                        "id": str(uuid.uuid4()),
-                        "name": name.text.strip(),
-                        "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                        "img": img["src"] if img else "",
-                        "link": link["href"] if link else ""
-                    })
+                if not name_tag:
+                    continue
+                
+                in_stock = True
+                if stock_tag and "Out Of Stock" in stock_tag.get("class", []):
+                    in_stock = False
+                
+                products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name_tag.text.strip(),
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "img": img_tag["src"] if img_tag else "",
+                    "link": name_tag["href"] if name_tag else "",
+                    "in_stock": in_stock
+                })
             
             page += 1
-            smart_delay(1.5, 3.0)  # Longer delay for PotakaIT
+            smart_delay(1.0, 2.0)
         
         logger.info(f"PotakaIT: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -669,131 +675,317 @@ def scrape_ryans_catalog(category, max_pages=50):
         return results
 
 
-def scrape_binary_catalog(category, max_pages=50):
-    """Scrape all pages from Binary Logic for a category using cloudscraper"""
-    
-    if not CLOUDSCRAPER_AVAILABLE:
-        logger.error("Binary: cloudscraper not available. Install with: pip install cloudscraper")
-        return {"products": [], "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"}
-    
-    results = {
-        "products": [],
-        "logo": "https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp"
-    }
-    
-    # Enhanced headers to bypass cloud server detection
-    custom_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Cache-Control': 'max-age=0',
-        'Referer': 'https://www.google.com/',
-    }
-    
+def scrape_computervillage_catalog(category, max_pages=50):
+    """Scrape all pages from Computer Village for a category"""
     try:
-        # Create scraper instance with enhanced settings
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'desktop': True,
-                'mobile': False
-            },
-            delay=5,
-            interpreter='nodejs'  # Better JS challenge solving
-        )
-        scraper.headers.update(custom_headers)
-        
-        page_num = 1
-        # max_pages is now passed as argument
+        products = []
+        logo_url = "https://www.computervillage.com.bd/image/cache/catalog/logo/Computer-Village-Logo-358x90.png"
+        page = 1
         consecutive_empty = 0
+        headers = {"User-Agent": get_random_user_agent()}
         
-        while page_num <= max_pages:
-            # Binary Logic uses /search/{query} format
-            if page_num == 1:
-                url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(category)}"
-            else:
-                url = f"https://www.binarylogic.com.bd/search/{urllib.parse.quote(category)}?page={page_num}"
-            
-            logger.info(f"Binary: Scraping page {page_num} for {category}")
+        while page <= max_pages:
+            url = f"https://www.computervillage.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}&page={page}"
+            logger.info(f"ComputerVillage: Scraping page {page} for {category}")
             
             try:
-                # Retry logic for 403 errors
-                response = None
-                for retry in range(3):
-                    try:
-                        response = scraper.get(url, timeout=45)
-                        if response.status_code == 200:
-                            break
-                        elif response.status_code == 403:
-                            logger.warning(f"Binary: Page {page_num} returned 403 (attempt {retry+1}/3), waiting...")
-                            time.sleep(10 + retry * 5)
-                            # Recreate scraper with fresh session
-                            scraper = cloudscraper.create_scraper(
-                                browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True},
-                                delay=5, interpreter='nodejs'
-                            )
-                            scraper.headers.update(custom_headers)
-                        else:
-                            break
-                    except Exception as retry_err:
-                        logger.warning(f"Binary: Retry {retry+1} error: {retry_err}")
-                        time.sleep(5)
-                
-                if not response or response.status_code != 200:
-                    logger.error(f"Binary: Page {page_num} failed with status {response.status_code if response else 'None'}")
-                    logger.info(f"Binary: Cloudflare blocking detected. Skipping remaining pages.")
-                    break
-                
-                soup = BeautifulSoup(response.text, "html.parser")
-                items = soup.select(".single_product")
-                
-                if not items:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    logger.warning(f"ComputerVillage: Page {page} returned {response.status_code}")
                     consecutive_empty += 1
                     if consecutive_empty >= 2:
-                        logger.info(f"Binary: No more products found, stopping at page {page_num}")
                         break
-                    page_num += 1
-                    time.sleep(1)
+                    page += 1
+                    continue
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"ComputerVillage: Error on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            items = soup.select(".product-thumb")
+            
+            if not items:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    logger.info(f"ComputerVillage: No more products found, stopping at page {page}")
+                    break
+                page += 1
+                continue
+            
+            consecutive_empty = 0
+            
+            for item in items:
+                name_tag = item.select_one(".name a")
+                price_tag = item.select_one(".price")
+                img_tag = item.select_one(".image img")
+                stock_tag = item.select_one(".product-label")
+                
+                if not name_tag:
                     continue
                 
-                consecutive_empty = 0
-                logger.info(f"Binary: Found {len(items)} products on page {page_num}")
+                in_stock = True
+                if stock_tag and "Out Of Stock" in stock_tag.text:
+                    in_stock = False
                 
-                for item in items:
-                    name_elem = item.select_one(".p-item-name")
-                    price_elem = item.select_one(".current_price")
-                    img_elem = item.select_one(".p-item-img img")
-                    link_elem = item.select_one(".p-item-img a")
-                    
-                    if name_elem:
-                        results["products"].append({
-                            "id": str(uuid.uuid4()),
-                            "name": name_elem.get_text(strip=True),
-                            "price": normalize_price(price_elem.get_text(strip=True) if price_elem else "0"),
-                            "link": urllib.parse.urljoin(url, link_elem["href"]) if link_elem else "#",
-                            "img": urllib.parse.urljoin(url, img_elem["src"]) if img_elem else "",
-                            "in_stock": True
-                        })
-                
-                page_num += 1
-                smart_delay(1.5, 3.0)  # Random delay to avoid rate limiting
-                
-            except Exception as e:
-                logger.error(f"Binary: Error on page {page_num}: {e}")
-                break
+                products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name_tag.text.strip(),
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "img": img_tag["src"] if img_tag else "",
+                    "link": name_tag["href"] if name_tag else "",
+                    "in_stock": in_stock
+                })
+            
+            page += 1
+            smart_delay(1.0, 2.5)
         
-        logger.info(f"Binary: Total scraped {len(results['products'])} products for {category}")
-        return results
-        
+        logger.info(f"ComputerVillage: Total scraped {len(products)} products for {category}")
+        return {"products": products, "logo": logo_url}
+    
     except Exception as e:
-        logger.error(f"Binary catalog error: {e}")
-        return results
+        logger.error(f"ComputerVillage catalog error: {e}", exc_info=True)
+        return {"products": [], "logo": ""}
+
+
+def scrape_smartbd_catalog(category, max_pages=50):
+    """Scrape all pages from SmartBD for a category"""
+    try:
+        products = []
+        logo_url = "https://smartbd.com/wp-content/uploads/2021/01/smartbd-logo.png"
+        page = 1
+        consecutive_empty = 0
+        headers = {"User-Agent": get_random_user_agent()}
+        
+        while page <= max_pages:
+            if page == 1:
+                url = f"https://smartbd.com/?s={urllib.parse.quote(category)}&post_type=product"
+            else:
+                url = f"https://smartbd.com/page/{page}/?s={urllib.parse.quote(category)}&post_type=product"
+            
+            logger.info(f"SmartBD: Scraping page {page} for {category}")
+            
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    logger.warning(f"SmartBD: Page {page} returned {response.status_code}")
+                    consecutive_empty += 1
+                    if consecutive_empty >= 2:
+                        break
+                    page += 1
+                    continue
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"SmartBD: Error on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            items = soup.select("div.product-block.grid")
+            
+            if not items:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    logger.info(f"SmartBD: No more products found, stopping at page {page}")
+                    break
+                page += 1
+                continue
+            
+            consecutive_empty = 0
+            
+            for item in items:
+                name_tag = item.select_one("h3.name a")
+                price_tag = item.select_one(".price")
+                img_tag = item.select_one("img")
+                
+                if not name_tag:
+                    continue
+                
+                img_url = ""
+                if img_tag:
+                    img_url = img_tag.get("data-src") or img_tag.get("src") or ""
+                
+                price_text = ""
+                if price_tag:
+                    price_text = price_tag.text.replace("\xa0", "").strip()
+                
+                products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name_tag.text.strip(),
+                    "price": normalize_price(price_text) if price_text else "Out Of Stock",
+                    "img": img_url,
+                    "link": name_tag["href"] if name_tag else "",
+                    "in_stock": True
+                })
+            
+            page += 1
+            smart_delay(1.0, 2.5)
+        
+        logger.info(f"SmartBD: Total scraped {len(products)} products for {category}")
+        return {"products": products, "logo": logo_url}
+    
+    except Exception as e:
+        logger.error(f"SmartBD catalog error: {e}", exc_info=True)
+        return {"products": [], "logo": ""}
+
+
+def scrape_selltech_catalog(category, max_pages=50):
+    """Scrape all pages from SellTech for a category"""
+    try:
+        products = []
+        logo_url = "https://www.selltech.com.bd/image/cache/catalog/logo-200x50.png"
+        page = 1
+        consecutive_empty = 0
+        headers = {"User-Agent": get_random_user_agent()}
+        base_url = f"https://www.selltech.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}"
+        
+        while page <= max_pages:
+            url = base_url if page == 1 else f"{base_url}&page={page}"
+            logger.info(f"SellTech: Scraping page {page} for {category}")
+            
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    logger.warning(f"SellTech: Page {page} returned {response.status_code}")
+                    consecutive_empty += 1
+                    if consecutive_empty >= 2:
+                        break
+                    page += 1
+                    continue
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"SellTech: Error on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            items = soup.select("div.product-layout")
+            
+            if not items:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    logger.info(f"SellTech: No more products found, stopping at page {page}")
+                    break
+                page += 1
+                continue
+            
+            consecutive_empty = 0
+            
+            for item in items:
+                name_tag = item.select_one(".name a")
+                price_tag = item.select_one(".price")
+                img_tag = item.select_one(".image img")
+                stock_tag = item.select_one(".stock")
+                
+                if not name_tag:
+                    continue
+                
+                in_stock = True
+                if stock_tag and "Out" in stock_tag.text:
+                    in_stock = False
+                
+                products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name_tag.text.strip(),
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "img": img_tag["src"] if img_tag else "",
+                    "link": name_tag["href"] if name_tag else "",
+                    "in_stock": in_stock
+                })
+            
+            page += 1
+            smart_delay(1.0, 2.0)
+        
+        logger.info(f"SellTech: Total scraped {len(products)} products for {category}")
+        return {"products": products, "logo": logo_url}
+    
+    except Exception as e:
+        logger.error(f"SellTech catalog error: {e}", exc_info=True)
+        return {"products": [], "logo": ""}
+
+
+def scrape_globalbrand_catalog(category, max_pages=50):
+    """Scrape all pages from GlobalBrand for a category"""
+    try:
+        products = []
+        logo_url = "https://www.globalbrand.com.bd/image/cache/catalog/logo-200x50.png"
+        page = 1
+        consecutive_empty = 0
+        headers = {"User-Agent": get_random_user_agent()}
+        base_url = f"https://www.globalbrand.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}"
+        
+        while page <= max_pages:
+            url = base_url if page == 1 else f"{base_url}&page={page}"
+            logger.info(f"GlobalBrand: Scraping page {page} for {category}")
+            
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code != 200:
+                    logger.warning(f"GlobalBrand: Page {page} returned {response.status_code}")
+                    consecutive_empty += 1
+                    if consecutive_empty >= 2:
+                        break
+                    page += 1
+                    continue
+            except (requests.Timeout, requests.ConnectionError) as e:
+                logger.warning(f"GlobalBrand: Error on page {page}: {e}")
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            items = soup.select("div.product-layout")
+            
+            if not items:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    logger.info(f"GlobalBrand: No more products found, stopping at page {page}")
+                    break
+                page += 1
+                continue
+            
+            consecutive_empty = 0
+            
+            for item in items:
+                name_tag = item.select_one(".name a")
+                price_tag = item.select_one(".price")
+                img_tag = item.select_one(".image img")
+                stock_tag = item.select_one(".stock")
+                
+                if not name_tag:
+                    continue
+                
+                in_stock = True
+                if stock_tag and "Out" in stock_tag.text:
+                    in_stock = False
+                
+                products.append({
+                    "id": str(uuid.uuid4()),
+                    "name": name_tag.text.strip(),
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "img": img_tag["src"] if img_tag else "",
+                    "link": name_tag["href"] if name_tag else "",
+                    "in_stock": in_stock
+                })
+            
+            page += 1
+            smart_delay(1.0, 2.0)
+        
+        logger.info(f"GlobalBrand: Total scraped {len(products)} products for {category}")
+        return {"products": products, "logo": logo_url}
+    
+    except Exception as e:
+        logger.error(f"GlobalBrand catalog error: {e}", exc_info=True)
+        return {"products": [], "logo": ""}
+
+
+

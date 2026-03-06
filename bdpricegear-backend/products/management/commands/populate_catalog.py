@@ -17,7 +17,9 @@ from products.models import Product, Shop, Category, PriceHistory
 from products.utils.catalog_scraper import (
     scrape_startech_catalog, scrape_skyland_catalog, scrape_pchouse_catalog,
     scrape_ultratech_catalog, scrape_potakait_catalog,
-    scrape_ryans_catalog, scrape_binary_catalog, normalize_product_url
+    scrape_ryans_catalog, scrape_computervillage_catalog,
+    scrape_smartbd_catalog, scrape_selltech_catalog, scrape_globalbrand_catalog,
+    normalize_product_url
 )
 
 
@@ -221,8 +223,11 @@ class Command(BaseCommand):
             {'name': 'SkyLand', 'website_url': 'https://www.skyland.com.bd', 'logo_url': 'https://www.skyland.com.bd/image/cache/wp/gp/skyland-logo-1398x471.webp', 'priority': 3},
             {'name': 'PcHouse', 'website_url': 'https://www.pchouse.com.bd', 'logo_url': 'https://www.pchouse.com.bd/image/catalog/unnamed.png', 'priority': 3},
             {'name': 'UltraTech', 'website_url': 'https://www.ultratech.com.bd', 'logo_url': 'https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp', 'priority': 2},
-            {'name': 'Binary', 'website_url': 'https://www.binarylogic.com.bd', 'logo_url': 'https://www.binarylogic.com.bd/images/brand_image/binary-logic.webp', 'priority': 2},
-            {'name': 'PotakaIT', 'website_url': 'https://www.potakait.com', 'logo_url': 'https://www.potakait.com/image/catalog/logo.png', 'priority': 1},
+            {'name': 'PotakaIT', 'website_url': 'https://www.potakait.com', 'logo_url': 'https://www.potakait.com/image/catalog/logo.png', 'priority': 2},
+            {'name': 'ComputerVillage', 'website_url': 'https://www.computervillage.com.bd', 'logo_url': 'https://www.computervillage.com.bd/image/cache/catalog/logo/Computer-Village-Logo-358x90.png', 'priority': 2},
+            {'name': 'SmartBD', 'website_url': 'https://smartbd.com', 'logo_url': 'https://smartbd.com/wp-content/uploads/2021/01/smartbd-logo.png', 'priority': 1},
+            {'name': 'SellTech', 'website_url': 'https://www.selltech.com.bd', 'logo_url': 'https://www.selltech.com.bd/image/cache/catalog/logo-200x50.png', 'priority': 1},
+            {'name': 'GlobalBrand', 'website_url': 'https://www.globalbrand.com.bd', 'logo_url': 'https://www.globalbrand.com.bd/image/cache/catalog/logo-200x50.png', 'priority': 1},
         ]
         
         for shop_data in shops:
@@ -252,7 +257,10 @@ class Command(BaseCommand):
                 ('UltraTech', scrape_ultratech_catalog),
                 ('PotakaIT', scrape_potakait_catalog),
                 ('Ryans', scrape_ryans_catalog),
-                ('Binary', scrape_binary_catalog),
+                ('ComputerVillage', scrape_computervillage_catalog),
+                ('SmartBD', scrape_smartbd_catalog),
+                ('SellTech', scrape_selltech_catalog),
+                ('GlobalBrand', scrape_globalbrand_catalog),
             ]
 
             # Reduce workers for Render free tier (512 MB limit) - was 7
