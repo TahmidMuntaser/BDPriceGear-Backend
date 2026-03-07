@@ -39,7 +39,7 @@ def create_session():
     session.mount('https://', adapter)
     return session
 
-def smart_delay(min_delay=1.0, max_delay=3.0):
+def smart_delay(min_delay=0.2, max_delay=0.5):
     """Random delay between requests to avoid rate limiting"""
     delay = random.uniform(min_delay, max_delay)
     time.sleep(delay)
@@ -179,7 +179,7 @@ def scrape_startech_catalog(category, max_pages=50):
                     })
             
             page += 1
-            smart_delay(1.0, 2.5)  # Random delay to avoid rate limiting
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"StarTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -288,7 +288,7 @@ def scrape_skyland_catalog(category, max_pages=50):
                     })
             
             page += 1
-            smart_delay(1.0, 2.5)  # Random delay
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         # Remove duplicates based on normalized URL before returning
         seen_urls = set()
@@ -368,7 +368,7 @@ def scrape_pchouse_catalog(category, max_pages=50):
                     })
             
             page += 1
-            smart_delay(1.5, 3.0)  # Longer delay for PcHouse
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"PcHouse: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -452,7 +452,7 @@ def scrape_ultratech_catalog(category, max_pages=50):
                     })
             
             page += 1
-            smart_delay(1.0, 2.5)  # Random delay to avoid rate limiting
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"UltraTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -521,7 +521,7 @@ def scrape_potakait_catalog(category, max_pages=50):
                 })
             
             page += 1
-            smart_delay(1.0, 2.0)
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"PotakaIT: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -741,7 +741,7 @@ def scrape_computervillage_catalog(category, max_pages=50):
                 })
             
             page += 1
-            smart_delay(1.0, 2.5)
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"ComputerVillage: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -824,7 +824,7 @@ def scrape_smartbd_catalog(category, max_pages=50):
                 })
             
             page += 1
-            smart_delay(1.0, 2.5)
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"SmartBD: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -901,7 +901,7 @@ def scrape_selltech_catalog(category, max_pages=50):
                 })
             
             page += 1
-            smart_delay(1.0, 2.0)
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"SellTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -978,7 +978,7 @@ def scrape_globalbrand_catalog(category, max_pages=50):
                 })
             
             page += 1
-            smart_delay(1.0, 2.0)
+            smart_delay(0.2, 0.5)  # Small delay between pages
         
         logger.info(f"GlobalBrand: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
@@ -988,4 +988,103 @@ def scrape_globalbrand_catalog(category, max_pages=50):
         return {"products": [], "logo": ""}
 
 
+async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
+    """Scrape Ryans using an existing Playwright page instance.
+
+    The browser and context must already be created by the caller.
+    This avoids launching a new browser for every category, saving RAM.
+    """
+    products = []
+    logo_url = "https://www.ryans.com/assets/images/ryans-logo.svg"
+    base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
+    page_num = 1
+    consecutive_empty = 0
+
+    while page_num <= max_pages:
+        url = f"{base_url}&limit=30&page={page_num}"
+        logger.info(f"Ryans (Playwright): page {page_num} for {category}")
+
+        try:
+            await playwright_page.goto(url, wait_until="load", timeout=60000)
+
+            # Wait for Cloudflare Rocket Loader to finish re-executing scripts,
+            # then confirm the product grid is rendered before reading content.
+            try:
+                await playwright_page.wait_for_selector(
+                    ".category-single-product", timeout=15000
+                )
+            except PlaywrightTimeout:
+                # Product grid didn't appear — may be CF challenge or empty page
+                pass
+
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+            content = await playwright_page.content()
+
+            # If Cloudflare challenge appears, wait and retry once
+            if "just a moment" in content.lower() or "checking your browser" in content.lower():
+                logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, waiting 12s...")
+                await asyncio.sleep(12)
+                content = await playwright_page.content()
+                if "just a moment" in content.lower() or "checking your browser" in content.lower():
+                    logger.warning(f"Ryans: Cloudflare persists on page {page_num}, stopping")
+                    break
+
+            soup = BeautifulSoup(content, "html.parser")
+            items = soup.select(".category-single-product")
+
+            if not items:
+                consecutive_empty += 1
+                logger.info(f"Ryans: No products on page {page_num}, consecutive empty: {consecutive_empty}")
+                if consecutive_empty >= 2:
+                    logger.info(f"Ryans: No more products, stopping at page {page_num}")
+                    break
+                page_num += 1
+                await asyncio.sleep(0.3)
+                continue
+
+            consecutive_empty = 0
+
+            for item in items:
+                name_elem = item.select_one(".product-title a")
+                price_elem = item.select_one(".pr-text")
+                link_elem = item.select_one(".image-box a")
+                img_elem = item.select_one(".image-box img")
+
+                if name_elem:
+                    product_link = (
+                        urllib.parse.urljoin(url, link_elem["href"])
+                        if link_elem and link_elem.has_attr("href")
+                        else "#"
+                    )
+                    product_price = (
+                        normalize_price(price_elem.get_text(strip=True))
+                        if price_elem
+                        else "Out of Stock"
+                    )
+                    product_img = (
+                        img_elem["src"] if img_elem and img_elem.has_attr("src") else ""
+                    )
+                    if product_img and not product_img.startswith(("http://", "https://")):
+                        product_img = urllib.parse.urljoin(url, product_img)
+
+                    products.append({
+                        "id": str(uuid.uuid4()),
+                        "name": name_elem.get_text(strip=True),
+                        "price": product_price,
+                        "link": product_link,
+                        "img": product_img,
+                        "in_stock": True,
+                    })
+
+        except PlaywrightTimeout:
+            logger.warning(f"Ryans: Timeout on page {page_num}, skipping")
+        except Exception as e:
+            logger.error(f"Ryans: Error on page {page_num}: {e}")
+            break
+
+        page_num += 1
+        await asyncio.sleep(random.uniform(3.0, 5.0))  # Delay between pages to avoid CF rate limit
+
+    logger.info(f"Ryans (Playwright): Total {len(products)} products for {category}")
+    return {"products": products, "logo": logo_url}
 

@@ -1,15 +1,9 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction, close_old_connections
-import asyncio
 import logging
 import urllib.parse
 import re
-import os
-from playwright.async_api import async_playwright
-from concurrent.futures import ThreadPoolExecutor
-import queue
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +132,10 @@ class Command(BaseCommand):
             'Mouse': 'Mouse',
         }
 
-        categories_created = self.create_categories(options['categories'])
+        categories = options['categories']
+        max_pages = 25
+
+        categories_created = self.create_categories(categories)
         self.stdout.write(self.style.SUCCESS(f'Categories ready: {categories_created}'))
 
         shops_created = self.create_shops()
@@ -147,59 +144,39 @@ class Command(BaseCommand):
         total_created = 0
         total_updated = 0
 
-        for category in options['categories']:
-            # Get the search term for this category
-            search_term = category_to_search_term.get(category, category)
-            self.stdout.write(f'\nScraping category: {category} (searching: {search_term})')
+        # 10 static shops (requests-based) — one shop at a time, all categories
+        static_scrapers = [
+            ('StarTech', scrape_startech_catalog),
+            ('SkyLand', scrape_skyland_catalog),
+            ('PcHouse', scrape_pchouse_catalog),
+            ('UltraTech', scrape_ultratech_catalog),
+            ('PotakaIT', scrape_potakait_catalog),
+            ('Ryans', scrape_ryans_catalog),
+            ('ComputerVillage', scrape_computervillage_catalog),
+            ('SmartBD', scrape_smartbd_catalog),
+            ('SellTech', scrape_selltech_catalog),
+            ('GlobalBrand', scrape_globalbrand_catalog),
+        ]
 
-            # Queue for passing scraped data from scraper to saver
-            data_queue = queue.Queue()
+        # Sequential: Shop → Category1..N
+        self.stdout.write(self.style.SUCCESS('\n=== Scraping all shops (sequential) ==='))
+        for shop_name, scraper_fn in static_scrapers:
+            self.stdout.write(f'\n[Shop] {shop_name}')
+            for category in categories:
+                search_term = category_to_search_term.get(category, category)
+                self.stdout.write(f'  Category: {category} (search: {search_term})')
+                try:
+                    close_old_connections()
+                    result = scraper_fn(search_term, max_pages=max_pages)
+                    created, updated = self.save_shop_products(shop_name, result, category)
+                    total_created += created
+                    total_updated += updated
+                except Exception as e:
+                    logger.error(f"Error scraping {shop_name}/{category}: {e}")
 
-            def save_worker():
-                nonlocal total_created, total_updated
-                while True:
-                    item = data_queue.get()
-                    if item is None:  # Sentinel to stop
-                        break
-                    shop_name, shop_data = item
-                    # Retry logic for saving products with connection cleanup
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            # Close old connections before each save attempt
-                            close_old_connections()
-                            
-                            created, updated = self.save_shop_products(shop_name, shop_data, category)
-                            total_created += created
-                            total_updated += updated
-                            
-                            # Close connections after successful save
-                            close_old_connections()
-                            break
-                        except Exception as e:
-                            logger.error(f"Error saving products for {shop_name} ({category}), attempt {attempt+1}: {e}")
-                            # Close connections on error
-                            close_old_connections()
-                            
-                            if attempt < max_retries - 1:
-                                import time; time.sleep(2 * (attempt + 1))
-                            else:
-                                self.stdout.write(self.style.ERROR(f"Failed to save products for {shop_name} ({category}) after {max_retries} attempts."))
-                    data_queue.task_done()
-
-            # Start save worker thread
-            save_thread = threading.Thread(target=save_worker, daemon=True)
-            save_thread.start()
-
-            # Run scrapers with the search term (not category name)
-            self.run_catalog_scrapers_streaming(search_term, data_queue, max_pages=25)
-
-            # Wait for all saves to complete
-            data_queue.join()
-            data_queue.put(None)  # Stop signal
-            save_thread.join()
-
-        self.stdout.write(self.style.SUCCESS(f'\nCatalog populated: {total_created} products created, {total_updated} updated'))
+        self.stdout.write(self.style.SUCCESS(
+            f'\nCatalog populated: {total_created} products created, {total_updated} updated'
+        ))
 
     def create_categories(self, category_names):
         count = 0
@@ -245,38 +222,6 @@ class Command(BaseCommand):
                 count += 1
         
         return count
-
-    def run_catalog_scrapers_streaming(self, category, data_queue, max_pages=50):
-        """Run scrapers and stream results to queue as they complete"""
-        def run_all_scrapers_streaming(cat, queue, max_pages):
-            # All scrapers now accept max_pages argument
-            scrapers = [
-                ('StarTech', scrape_startech_catalog),
-                ('SkyLand', scrape_skyland_catalog),
-                ('PcHouse', scrape_pchouse_catalog),
-                ('UltraTech', scrape_ultratech_catalog),
-                ('PotakaIT', scrape_potakait_catalog),
-                ('Ryans', scrape_ryans_catalog),
-                ('ComputerVillage', scrape_computervillage_catalog),
-                ('SmartBD', scrape_smartbd_catalog),
-                ('SellTech', scrape_selltech_catalog),
-                ('GlobalBrand', scrape_globalbrand_catalog),
-            ]
-
-            # Reduce workers for Render free tier (512 MB limit) - was 7
-            max_workers = int(os.environ.get('SCRAPER_MAX_WORKERS', '2'))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(scraper, cat, max_pages): name for name, scraper in scrapers}
-
-                for future in futures:
-                    try:
-                        result = future.result()
-                        shop_name = futures[future]
-                        queue.put((shop_name, result))
-                    except Exception as e:
-                        logger.error(f"Error scraping {futures[future]}: {e}")
-
-        run_all_scrapers_streaming(category, data_queue, max_pages)
 
     def save_shop_products(self, shop_name, shop_data, category_name):
         """Save products from a single shop with proper connection management"""
