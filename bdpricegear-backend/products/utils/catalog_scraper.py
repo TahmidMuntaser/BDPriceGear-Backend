@@ -174,7 +174,7 @@ def scrape_startech_catalog(category, max_pages=50):
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
                         "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                        "img": img["src"] if img else "",
+                        "img": (img.get("data-src") or img.get("src") or "") if img else "",
                         "link": link["href"] if link else ""
                     })
             
@@ -261,13 +261,9 @@ def scrape_skyland_catalog(category, max_pages=50):
                 link = item.select_one(".product-img") or item.select_one(".name a")
                 
                 img_url = ""
-                if img and img.has_attr("src"):
-                    img_url = img["src"]
-                    if not img_url.startswith(('http://', 'https://')):
-                        img_url = urllib.parse.urljoin(base_url, img_url)
-                elif img and img.has_attr("data-src"):
-                    img_url = img["data-src"]
-                    if not img_url.startswith(('http://', 'https://')):
+                if img:
+                    img_url = img.get("data-src") or img.get("src") or ""
+                    if img_url and not img_url.startswith(('http://', 'https://')):
                         img_url = urllib.parse.urljoin(base_url, img_url)
                 
                 link_url = ""
@@ -309,30 +305,31 @@ def scrape_skyland_catalog(category, max_pages=50):
 def scrape_pchouse_catalog(category, max_pages=50):
     """Scrape all pages from PcHouse for a category"""
     try:
+        session = create_session()
         base_url = "https://www.pchouse.com.bd/product/search"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
-        
+
         products = []
         logo_url = "https://www.pchouse.com.bd/image/catalog/unnamed.png"
         page = 1
         # max_pages is now passed as argument
         consecutive_empty = 0
-        
+
         while page <= max_pages:
             url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PcHouse: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+                response = session.get(url, headers=headers, timeout=30, allow_redirects=True)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
             except requests.exceptions.Timeout:
                 logger.warning(f"PcHouse: Timeout on page {page}, retrying once...")
                 try:
-                    response = requests.get(url, headers=headers, timeout=45)
+                    response = session.get(url, headers=headers, timeout=45)
                     soup = BeautifulSoup(response.text, "html.parser")
                 except Exception as retry_err:
                     logger.error(f"PcHouse: Retry failed on page {page}: {retry_err}")
@@ -363,7 +360,7 @@ def scrape_pchouse_catalog(category, max_pages=50):
                         "id": str(uuid.uuid4()),
                         "name": name_elem.text.strip(),
                         "price": normalize_price(price_elem.text.strip()) if price_elem else "Out Of Stock",
-                        "img": img_elem.get("src", "") if img_elem else "",
+                        "img": (img_elem.get("data-src") or img_elem.get("src") or "") if img_elem else "",
                         "link": link_elem.get("href", "") if link_elem else ""
                     })
             
@@ -381,6 +378,7 @@ def scrape_pchouse_catalog(category, max_pages=50):
 def scrape_ultratech_catalog(category, max_pages=50):
     """Scrape all pages from UltraTech for a category"""
     try:
+        session = create_session()
         base_url = "https://www.ultratech.com.bd/index.php"
         products = []
         logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
@@ -401,7 +399,7 @@ def scrape_ultratech_catalog(category, max_pages=50):
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    response = requests.get(url, headers=headers, timeout=60)  # Increased to 60s
+                    response = session.get(url, headers=headers, timeout=60)  # Increased to 60s
                     break  # Success, exit retry loop
                 except (requests.Timeout, requests.ConnectionError) as e:
                     if attempt < max_retries - 1:
@@ -414,7 +412,6 @@ def scrape_ultratech_catalog(category, max_pages=50):
                         if consecutive_errors >= 3:
                             logger.warning(f"UltraTech: Too many errors, stopping at page {page}")
                             return {"products": products, "logo": logo_url}
-                        page += 1
                         continue
             else:
                 # Failed all retries
@@ -447,13 +444,13 @@ def scrape_ultratech_catalog(category, max_pages=50):
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
                         "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                        "img": img["src"] if img else "",
+                        "img": (img.get("data-src") or img.get("src") or "") if img else "",
                         "link": link["href"] if link else ""
                     })
-            
+
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
+
         logger.info(f"UltraTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
@@ -465,18 +462,19 @@ def scrape_ultratech_catalog(category, max_pages=50):
 def scrape_potakait_catalog(category, max_pages=50):
     """Scrape all pages from PotakaIT for a category"""
     try:
+        session = create_session()
         products = []
         logo_url = "https://potakait.com/image/catalog/logo.png"
         page = 1
         consecutive_empty = 0
         headers = {"User-Agent": get_random_user_agent()}
-        
+
         while page <= max_pages:
             url = f"https://potakait.com/product/search?&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"PotakaIT: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=60)
+                response = session.get(url, headers=headers, timeout=60)
             except (requests.Timeout, requests.ConnectionError) as e:
                 logger.warning(f"PotakaIT: Timeout on page {page}: {e}")
                 consecutive_empty += 1
@@ -515,14 +513,14 @@ def scrape_potakait_catalog(category, max_pages=50):
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
                     "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
-                    "img": img_tag["src"] if img_tag else "",
+                    "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
                 })
-            
+
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
+
         logger.info(f"PotakaIT: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
@@ -678,18 +676,19 @@ def scrape_ryans_catalog(category, max_pages=50):
 def scrape_computervillage_catalog(category, max_pages=50):
     """Scrape all pages from Computer Village for a category"""
     try:
+        session = create_session()
         products = []
         logo_url = "https://www.computervillage.com.bd/image/cache/catalog/logo/Computer-Village-Logo-358x90.png"
         page = 1
         consecutive_empty = 0
         headers = {"User-Agent": get_random_user_agent()}
-        
+
         while page <= max_pages:
             url = f"https://www.computervillage.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}&page={page}"
             logger.info(f"ComputerVillage: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = session.get(url, headers=headers, timeout=30)
                 if response.status_code != 200:
                     logger.warning(f"ComputerVillage: Page {page} returned {response.status_code}")
                     consecutive_empty += 1
@@ -735,14 +734,14 @@ def scrape_computervillage_catalog(category, max_pages=50):
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
                     "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
-                    "img": img_tag["src"] if img_tag else "",
+                    "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
                 })
-            
+
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
+
         logger.info(f"ComputerVillage: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
@@ -754,22 +753,23 @@ def scrape_computervillage_catalog(category, max_pages=50):
 def scrape_smartbd_catalog(category, max_pages=50):
     """Scrape all pages from SmartBD for a category"""
     try:
+        session = create_session()
         products = []
         logo_url = "https://smartbd.com/wp-content/uploads/2021/01/smartbd-logo.png"
         page = 1
         consecutive_empty = 0
         headers = {"User-Agent": get_random_user_agent()}
-        
+
         while page <= max_pages:
             if page == 1:
                 url = f"https://smartbd.com/?s={urllib.parse.quote(category)}&post_type=product"
             else:
                 url = f"https://smartbd.com/page/{page}/?s={urllib.parse.quote(category)}&post_type=product"
-            
+
             logger.info(f"SmartBD: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = session.get(url, headers=headers, timeout=30)
                 if response.status_code != 200:
                     logger.warning(f"SmartBD: Page {page} returned {response.status_code}")
                     consecutive_empty += 1
@@ -837,19 +837,20 @@ def scrape_smartbd_catalog(category, max_pages=50):
 def scrape_selltech_catalog(category, max_pages=50):
     """Scrape all pages from SellTech for a category"""
     try:
+        session = create_session()
         products = []
         logo_url = "https://www.selltech.com.bd/image/cache/catalog/logo-200x50.png"
         page = 1
         consecutive_empty = 0
         headers = {"User-Agent": get_random_user_agent()}
         base_url = f"https://www.selltech.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}"
-        
+
         while page <= max_pages:
             url = base_url if page == 1 else f"{base_url}&page={page}"
             logger.info(f"SellTech: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = session.get(url, headers=headers, timeout=30)
                 if response.status_code != 200:
                     logger.warning(f"SellTech: Page {page} returned {response.status_code}")
                     consecutive_empty += 1
@@ -895,14 +896,14 @@ def scrape_selltech_catalog(category, max_pages=50):
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
                     "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
-                    "img": img_tag["src"] if img_tag else "",
+                    "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
                 })
-            
+
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
+
         logger.info(f"SellTech: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     
@@ -914,19 +915,20 @@ def scrape_selltech_catalog(category, max_pages=50):
 def scrape_globalbrand_catalog(category, max_pages=50):
     """Scrape all pages from GlobalBrand for a category"""
     try:
+        session = create_session()
         products = []
         logo_url = "https://www.globalbrand.com.bd/image/cache/catalog/logo-200x50.png"
         page = 1
         consecutive_empty = 0
         headers = {"User-Agent": get_random_user_agent()}
         base_url = f"https://www.globalbrand.com.bd/index.php?route=product/search&search={urllib.parse.quote(category)}"
-        
+
         while page <= max_pages:
             url = base_url if page == 1 else f"{base_url}&page={page}"
             logger.info(f"GlobalBrand: Scraping page {page} for {category}")
-            
+
             try:
-                response = requests.get(url, headers=headers, timeout=30)
+                response = session.get(url, headers=headers, timeout=30)
                 if response.status_code != 200:
                     logger.warning(f"GlobalBrand: Page {page} returned {response.status_code}")
                     consecutive_empty += 1
@@ -972,14 +974,14 @@ def scrape_globalbrand_catalog(category, max_pages=50):
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
                     "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
-                    "img": img_tag["src"] if img_tag else "",
+                    "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
                 })
-            
+
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
+
         logger.info(f"GlobalBrand: Total scraped {len(products)} products for {category}")
         return {"products": products, "logo": logo_url}
     

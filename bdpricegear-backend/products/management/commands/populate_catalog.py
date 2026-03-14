@@ -97,7 +97,8 @@ def is_product_in_category(product_name, category_name):
     
     elif category_lower == 'mouse':
         return re.search(r'\bmouse\b', name_lower) is not None
-    
+
+    logger.warning(f"is_product_in_category: unrecognized category '{category_name}', allowing all products by default")
     return True
 
 
@@ -180,9 +181,7 @@ class Command(BaseCommand):
 
     def create_categories(self, category_names):
         count = 0
-        categories = ['Processor', 'Motherboard', 'RAM', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'GPU', 'CPU Cooler', 'Monitor', 'Keyboard', 'Mouse']
-        
-        for cat_name in categories:
+        for cat_name in category_names:
             _, created = Category.objects.update_or_create(
                 name=cat_name,
                 defaults={'is_active': True}
