@@ -1,24 +1,34 @@
-name: Hourly Product Scraping
+name: Product Scraper Trigger
 
 on:
   schedule:
-    # Runs every 2 hours at minute 0
-    - cron: '0 */2 * * *'
-  workflow_dispatch:  # Allows manual trigger from GitHub Actions tab
+    # Runs every 3 hours
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
 
 jobs:
   trigger-scraping:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Trigger Product Update on Scraper Service
         run: |
           echo "Triggering product update at $(date)"
           echo "Target: Dedicated Scraper Service (bdpricegear-scraper)"
+
+          echo "Step 1: Warming up Render service..."
+          curl -I https://bdpricegear-scraper.onrender.com \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5
+
+          echo "Step 2: Sending scraping trigger request..."
+
           curl -X POST https://bdpricegear-scraper.onrender.com/api/update/ \
             -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n" \
-            --max-time 10 \
-            --retry 2
-          echo "Update triggered successfully on scraper service!"
-          echo "Main API server (bdpricegear) remains available for users."
+            --max-time 60 \
+            --retry 3 \
+            --retry-delay 5 \
+            -w "\nHTTP Status: %{http_code}\n"
+
+          echo "Scraper trigger request completed!"
