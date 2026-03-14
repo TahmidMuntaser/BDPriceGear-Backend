@@ -61,7 +61,7 @@ def normalize_price(text):
     try:
         return float(num)
     except:
-        return "Out Of Stock"
+        return "Out of Stock"
 
 
 def normalize_product_url(url):
@@ -173,7 +173,7 @@ def scrape_startech_catalog(category, max_pages=50):
                     products.append({
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
-                        "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                        "price": normalize_price(price.text.strip()) if price else "Out of Stock",
                         "img": (img.get("data-src") or img.get("src") or "") if img else "",
                         "link": link["href"] if link else ""
                     })
@@ -278,7 +278,7 @@ def scrape_skyland_catalog(category, max_pages=50):
                     products.append({
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
-                        "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                        "price": normalize_price(price.text.strip()) if price else "Out of Stock",
                         "img": img_url,
                         "link": normalized_link
                     })
@@ -300,12 +300,14 @@ def scrape_skyland_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"SkyLand catalog error: {e}")
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_pchouse_catalog(category, max_pages=50):
     """Scrape all pages from PcHouse for a category"""
+    session = create_session()
     try:
-        session = create_session()
         base_url = "https://www.pchouse.com.bd/product/search"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -359,7 +361,7 @@ def scrape_pchouse_catalog(category, max_pages=50):
                     products.append({
                         "id": str(uuid.uuid4()),
                         "name": name_elem.text.strip(),
-                        "price": normalize_price(price_elem.text.strip()) if price_elem else "Out Of Stock",
+                        "price": normalize_price(price_elem.text.strip()) if price_elem else "Out of Stock",
                         "img": (img_elem.get("data-src") or img_elem.get("src") or "") if img_elem else "",
                         "link": link_elem.get("href", "") if link_elem else ""
                     })
@@ -373,12 +375,14 @@ def scrape_pchouse_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"PcHouse catalog error: {e}")
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_ultratech_catalog(category, max_pages=50):
     """Scrape all pages from UltraTech for a category"""
+    session = create_session()
     try:
-        session = create_session()
         base_url = "https://www.ultratech.com.bd/index.php"
         products = []
         logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
@@ -443,7 +447,7 @@ def scrape_ultratech_catalog(category, max_pages=50):
                     products.append({
                         "id": str(uuid.uuid4()),
                         "name": name.text.strip(),
-                        "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
+                        "price": normalize_price(price.text.strip()) if price else "Out of Stock",
                         "img": (img.get("data-src") or img.get("src") or "") if img else "",
                         "link": link["href"] if link else ""
                     })
@@ -457,12 +461,14 @@ def scrape_ultratech_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"UltraTech catalog error: {e}")
         return {"products": products if 'products' in locals() else [], "logo": logo_url if 'logo_url' in locals() else ""}
+    finally:
+        session.close()
 
 
 def scrape_potakait_catalog(category, max_pages=50):
     """Scrape all pages from PotakaIT for a category"""
+    session = create_session()
     try:
-        session = create_session()
         products = []
         logo_url = "https://potakait.com/image/catalog/logo.png"
         page = 1
@@ -512,7 +518,7 @@ def scrape_potakait_catalog(category, max_pages=50):
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out of Stock",
                     "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
@@ -527,6 +533,8 @@ def scrape_potakait_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"PotakaIT catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_ryans_catalog(category, max_pages=50):
@@ -675,8 +683,8 @@ def scrape_ryans_catalog(category, max_pages=50):
 
 def scrape_computervillage_catalog(category, max_pages=50):
     """Scrape all pages from Computer Village for a category"""
+    session = create_session()
     try:
-        session = create_session()
         products = []
         logo_url = "https://www.computervillage.com.bd/image/cache/catalog/logo/Computer-Village-Logo-358x90.png"
         page = 1
@@ -733,7 +741,7 @@ def scrape_computervillage_catalog(category, max_pages=50):
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out of Stock",
                     "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
@@ -748,12 +756,14 @@ def scrape_computervillage_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"ComputerVillage catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_smartbd_catalog(category, max_pages=50):
     """Scrape all pages from SmartBD for a category"""
+    session = create_session()
     try:
-        session = create_session()
         products = []
         logo_url = "https://smartbd.com/wp-content/uploads/2021/01/smartbd-logo.png"
         page = 1
@@ -817,7 +827,7 @@ def scrape_smartbd_catalog(category, max_pages=50):
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_text) if price_text else "Out Of Stock",
+                    "price": normalize_price(price_text) if price_text else "Out of Stock",
                     "img": img_url,
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": True
@@ -832,12 +842,14 @@ def scrape_smartbd_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"SmartBD catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_selltech_catalog(category, max_pages=50):
     """Scrape all pages from SellTech for a category"""
+    session = create_session()
     try:
-        session = create_session()
         products = []
         logo_url = "https://www.selltech.com.bd/image/cache/catalog/logo-200x50.png"
         page = 1
@@ -895,7 +907,7 @@ def scrape_selltech_catalog(category, max_pages=50):
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out of Stock",
                     "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
@@ -910,12 +922,14 @@ def scrape_selltech_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"SellTech catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 def scrape_globalbrand_catalog(category, max_pages=50):
     """Scrape all pages from GlobalBrand for a category"""
+    session = create_session()
     try:
-        session = create_session()
         products = []
         logo_url = "https://www.globalbrand.com.bd/image/cache/catalog/logo-200x50.png"
         page = 1
@@ -973,7 +987,7 @@ def scrape_globalbrand_catalog(category, max_pages=50):
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out Of Stock",
+                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out of Stock",
                     "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
@@ -988,6 +1002,8 @@ def scrape_globalbrand_catalog(category, max_pages=50):
     except Exception as e:
         logger.error(f"GlobalBrand catalog error: {e}", exc_info=True)
         return {"products": [], "logo": ""}
+    finally:
+        session.close()
 
 
 async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
