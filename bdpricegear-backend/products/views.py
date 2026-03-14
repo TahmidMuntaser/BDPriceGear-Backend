@@ -509,8 +509,14 @@ def trigger_update(request):
         
         return Response(response_data)
     
-    # POST request - trigger update in background
-    if update_in_progress:
+    # POST request - acquire lock atomically (prevents race condition with concurrent requests)
+    try:
+        acquired = cache.add('update_in_progress', True, timeout=14400)  # 4 hours — must outlast the longest possible scrape
+    except Exception as cache_err:
+        logger.error(f"Cache error acquiring lock: {cache_err}")
+        acquired = True  # if cache is broken, allow through
+
+    if not acquired:
         # Get last update from database for already_running response
         from zoneinfo import ZoneInfo
         last_update_dhaka = 'Never updated'
@@ -538,14 +544,12 @@ def trigger_update(request):
         """Run update using Django's call_command in background thread"""
         from django.core.management import call_command
         from django.db import close_old_connections, connection
-        import io
         import traceback
         
         try:
-            # Mark update as in progress
+            # Clear previous errors
             try:
-                cache.set('update_in_progress', True, timeout=3600)
-                cache.delete('last_scraping_error')  # Clear previous errors
+                cache.delete('last_scraping_error')
             except Exception as cache_err:
                 logger.error(f"Cache error during update start: {cache_err}")
             
@@ -554,20 +558,13 @@ def trigger_update(request):
             
             # Close any inherited connections - thread will create fresh ones
             close_old_connections()
-            
-            # Capture output
-            stdout_capture = io.StringIO()
-            stderr_capture = io.StringIO()
-            
+
             try:
                 # Run Django management command directly
                 logger.info("Starting populate_catalog command...")
-                call_command('populate_catalog', stdout=stdout_capture, stderr=stderr_capture)
-                
-                logger.info("✅ Product update completed successfully")
-                output = stdout_capture.getvalue()
-                if output:
-                    logger.info(f"Output: {output[:500]}")
+                call_command('populate_catalog')
+
+                logger.info("Product update completed successfully")
                 
                 # Store success timestamp
                 try:
@@ -578,10 +575,7 @@ def trigger_update(request):
                     
             except Exception as cmd_error:
                 error_msg = str(cmd_error)
-                logger.error(f"❌ Command failed: {error_msg}")
-                error_output = stderr_capture.getvalue()
-                if error_output:
-                    logger.error(f"Stderr: {error_output[:1000]}")
+                logger.error(f"Command failed: {error_msg}")
                 
                 # Store error details in cache
                 try:
