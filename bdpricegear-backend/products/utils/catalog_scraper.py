@@ -27,7 +27,7 @@ def get_random_user_agent():
     return random.choice(USER_AGENTS)
 
 def create_session():
-    """Create a requests session with connection pooling and retry logic"""
+    # Create a requests session with connection pooling and retry logic
     session = requests.Session()
     adapter = requests.adapters.HTTPAdapter(
         pool_connections=10,
@@ -40,7 +40,7 @@ def create_session():
     return session
 
 def smart_delay(min_delay=0.2, max_delay=0.5):
-    """Random delay between requests to avoid rate limiting"""
+    # Random delay between requests to avoid rate limiting
     delay = random.uniform(min_delay, max_delay)
     time.sleep(delay)
 
@@ -51,12 +51,50 @@ except ImportError:
     CLOUDSCRAPER_AVAILABLE = False
     logger.warning("cloudscraper not installed. Ryans scraping may be limited. Install with: pip install cloudscraper")
 
+def get_ryans_category_url(category):
+   
+    category_lower = category.lower().strip()
+
+    # Category URL mappings for Ryans
+    RYANS_CATEGORY_URLS = {
+        'monitor': 'https://www.ryans.com/category/monitor-all-monitor',
+        'processor': 'https://www.ryans.com/search?q=cpu',
+        'cpu': 'https://www.ryans.com/search?q=cpu',
+        'mouse': 'https://www.ryans.com/category/gaming-desktop-component-mouse',
+        'keyboard': 'https://www.ryans.com/category/gaming-desktop-component-keyboard',
+        'ram': 'https://www.ryans.com/category/gaming-desktop-component-desktop-ram',
+        'memory': 'https://www.ryans.com/category/gaming-desktop-component-desktop-ram',
+        'ssd': 'https://www.ryans.com/category/internal-ssd',
+        'solid state drive': 'https://www.ryans.com/category/internal-ssd',
+        'hdd': 'https://www.ryans.com/search?q=hdd',
+        'hard disk': 'https://www.ryans.com/search?q=hdd',
+        'hard drive': 'https://www.ryans.com/search?q=hdd',
+        'cpu cooler': 'https://www.ryans.com/category/gaming-desktop-component-cpu-cooler',
+        'cooler': 'https://www.ryans.com/category/gaming-desktop-component-cpu-cooler',
+        'motherboard': 'https://www.ryans.com/category/gaming-desktop-component-motherboard',
+        'power supply': 'https://www.ryans.com/category/gaming-desktop-component-power-supply',
+        'psu': 'https://www.ryans.com/category/gaming-desktop-component-power-supply',
+        'gpu': 'https://www.ryans.com/category/gaming-desktop-component-graphics-card',
+        'graphics card': 'https://www.ryans.com/category/gaming-desktop-component-graphics-card',
+        'cabinet': 'https://www.ryans.com/category/desktop-component-casing',
+        'casing': 'https://www.ryans.com/category/desktop-component-casing',
+        'case': 'https://www.ryans.com/category/desktop-component-casing',
+    }
+
+    # Try exact match first
+    if category_lower in RYANS_CATEGORY_URLS:
+        return RYANS_CATEGORY_URLS[category_lower]
+
+    # Fallback to search URL if no mapping found
+    return f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
+
+
 def normalize_price(text):
     """Extract and clean price values"""
     match = re.findall(r"[\d\.,]+", str(text))
     if not match:
         return "Out of Stock"
-    
+
     num = match[0].replace(',', '')
     try:
         return float(num)
@@ -538,17 +576,47 @@ def scrape_potakait_catalog(category, max_pages=50):
 
 
 def scrape_ryans_catalog(category, max_pages=50):
-    """Scrape all pages from Ryans for a category using cloudscraper"""
-    
+    """
+    Smart Ryans scraper that auto-detects environment:
+    - On Render/Railway: Uses Playwright (bypasses Cloudflare)
+    - Locally: Uses cloudscraper (faster)
+    """
+    import os
+
+    # Detect if running on cloud hosting
+    IS_CLOUD = (
+        os.getenv('RENDER') or
+        os.getenv('RAILWAY_ENVIRONMENT') or
+        os.getenv('RAILWAY_SERVICE_NAME') or
+        os.getenv('DYNO')  # Heroku
+    )
+
+    if IS_CLOUD:
+        logger.info(f"Ryans: Cloud environment detected, using Playwright for better Cloudflare bypass")
+        # Use Playwright on cloud hosting
+        try:
+            return asyncio.run(_scrape_ryans_with_playwright(category, max_pages))
+        except Exception as e:
+            logger.error(f"Ryans: Playwright error: {e}")
+            return {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
+    else:
+        logger.info(f"Ryans: Local environment detected, using cloudscraper")
+        # Use cloudscraper locally (faster)
+        return _scrape_ryans_with_cloudscraper(category, max_pages)
+
+
+def _scrape_ryans_with_cloudscraper(category, max_pages=50):
+    """Scrape Ryans using cloudscraper (for local use)"""
+
     if not CLOUDSCRAPER_AVAILABLE:
         logger.error("Ryans: cloudscraper not available. Install with: pip install cloudscraper")
         return {"products": [], "logo": "https://www.ryans.com/wp-content/themes/ryans/img/logo.png"}
-    
+
     results = {
         "products": [],
         "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"
     }
-    
+
     # Enhanced headers to bypass cloud server detection
     custom_headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -565,7 +633,7 @@ def scrape_ryans_catalog(category, max_pages=50):
         'Cache-Control': 'max-age=0',
         'Referer': 'https://www.google.com/',
     }
-    
+
     try:
         # Create scraper instance with enhanced settings
         scraper = cloudscraper.create_scraper(
@@ -579,16 +647,28 @@ def scrape_ryans_catalog(category, max_pages=50):
             interpreter='nodejs'  # Better JS challenge solving
         )
         scraper.headers.update(custom_headers)
-        
-        base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
+
+        # Get Ryans-specific category URL
+        base_url = get_ryans_category_url(category)
+        logger.info(f"Ryans: Using category URL: {base_url}")
+
+        # Determine if it's a search URL or category URL for pagination
+        is_search_url = 'search?q=' in base_url
+
         page_num = 1
-        # max_pages is now passed as argument
         consecutive_empty = 0
-        
+
         while page_num <= max_pages:
-            url = f"{base_url}&limit=30&page={page_num}"
+            # Build URL with pagination
+            if is_search_url:
+                # Search URLs use &limit=30&page=X
+                url = f"{base_url}&limit=30&page={page_num}"
+            else:
+                # Category URLs use ?limit=30&page=X
+                url = f"{base_url}?limit=30&page={page_num}"
+
             logger.info(f"Ryans: Scraping page {page_num} for {category}")
-            
+
             try:
                 # cloudscraper automatically handles Cloudflare challenges
                 response = None
@@ -611,22 +691,24 @@ def scrape_ryans_catalog(category, max_pages=50):
                     except Exception as retry_err:
                         logger.warning(f"Ryans: Retry {retry+1} error: {retry_err}")
                         time.sleep(5)
-                
+
                 if not response or response.status_code != 200:
                     logger.error(f"Ryans: Page {page_num} failed with status {response.status_code if response else 'None'}")
-                    logger.info(f"Ryans: Cloudflare blocking detected. Skipping remaining pages.")
+                    logger.warning(f"Ryans: Cloudflare blocking detected. This scraper may not work on cloud hosting (Render).")
+                    logger.info(f"Ryans: Consider using Playwright-based scraping for better Cloudflare bypass.")
                     break
-                
+
                 # Parse HTML
                 soup = BeautifulSoup(response.text, "html.parser")
-                
+
                 # Check for Cloudflare challenge page
                 if "just a moment" in response.text.lower() or "checking your browser" in response.text.lower():
                     logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, stopping")
+                    logger.info(f"Ryans: Cloudflare is blocking this scraper. Use Playwright for better results.")
                     break
-                
+
                 items = soup.select(".category-single-product")
-                
+
                 if not items:
                     consecutive_empty += 1
                     logger.info(f"Ryans: No products on page {page_num}, consecutive empty: {consecutive_empty}")
@@ -636,26 +718,26 @@ def scrape_ryans_catalog(category, max_pages=50):
                     page_num += 1
                     time.sleep(2)
                     continue
-                
+
                 consecutive_empty = 0
                 logger.info(f"Ryans: Found {len(items)} products on page {page_num}")
-                
+
                 # Extract product data
                 for item in items:
-                    name_elem = item.select_one(".product-title a")
+                    name_elem = item.select_one(".product-name a")
                     price_elem = item.select_one(".pr-text")
                     link_elem = item.select_one(".image-box a")
                     img_elem = item.select_one(".image-box img")
-                    
+
                     if name_elem:
                         product_name = name_elem.get_text(strip=True)
                         product_link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else "#"
                         product_price = normalize_price(price_elem.get_text(strip=True)) if price_elem else "Out of Stock"
                         product_img = img_elem["src"] if img_elem and img_elem.has_attr("src") else ""
-                        
+
                         if product_img and not product_img.startswith(('http://', 'https://')):
                             product_img = urllib.parse.urljoin(url, product_img)
-                        
+
                         results["products"].append({
                             "id": str(uuid.uuid4()),
                             "name": product_name,
@@ -664,21 +746,64 @@ def scrape_ryans_catalog(category, max_pages=50):
                             "img": product_img,
                             "in_stock": True
                         })
-                
+
                 page_num += 1
                 # Delay between pages to avoid rate limiting
                 time.sleep(3)
-                
+
             except Exception as e:
                 logger.error(f"Ryans: Error on page {page_num}: {e}")
                 break
-        
+
         logger.info(f"Ryans: Total scraped {len(results['products'])} products for {category}")
         return results
-        
+
     except Exception as e:
         logger.error(f"Ryans catalog error: {e}")
         return results
+
+
+async def _scrape_ryans_with_playwright(category, max_pages=50):
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        logger.error("Ryans: Playwright not installed. Install with: playwright install chromium")
+        return {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
+
+    try:
+        async with async_playwright() as p:
+            # Launch browser in headless mode
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                ]
+            )
+
+            # Create context with realistic settings
+            context = await browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+
+            page = await context.new_page()
+
+            # Call the existing Playwright scraper
+            result = await scrape_ryans_playwright(page, category, max_pages)
+
+            # Cleanup
+            await context.close()
+            await browser.close()
+
+            return result
+
+    except Exception as e:
+        logger.error(f"Ryans (Playwright wrapper) error: {e}", exc_info=True)
+        return {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
 
 
 def scrape_computervillage_catalog(category, max_pages=50):
@@ -1014,12 +1139,26 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
     """
     products = []
     logo_url = "https://www.ryans.com/assets/images/ryans-logo.svg"
-    base_url = f"https://www.ryans.com/search?q={urllib.parse.quote(category)}"
+
+    # Get Ryans-specific category URL
+    base_url = get_ryans_category_url(category)
+    logger.info(f"Ryans (Playwright): Using category URL: {base_url}")
+
+    # Determine if it's a search URL or category URL for pagination
+    is_search_url = 'search?q=' in base_url
+
     page_num = 1
     consecutive_empty = 0
 
     while page_num <= max_pages:
-        url = f"{base_url}&limit=30&page={page_num}"
+        # Build URL with pagination
+        if is_search_url:
+            # Search URLs use &limit=30&page=X
+            url = f"{base_url}&limit=30&page={page_num}"
+        else:
+            # Category URLs use ?limit=30&page=X
+            url = f"{base_url}?limit=30&page={page_num}"
+
         logger.info(f"Ryans (Playwright): page {page_num} for {category}")
 
         try:
@@ -1063,7 +1202,7 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
             consecutive_empty = 0
 
             for item in items:
-                name_elem = item.select_one(".product-title a")
+                name_elem = item.select_one(".product-name a")
                 price_elem = item.select_one(".pr-text")
                 link_elem = item.select_one(".image-box a")
                 img_elem = item.select_one(".image-box img")
