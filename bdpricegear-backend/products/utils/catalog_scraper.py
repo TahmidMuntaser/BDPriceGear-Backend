@@ -147,14 +147,14 @@ def scrape_startech_catalog(category, max_pages=50):
     """Scrape all pages from StarTech for a category"""
     logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
 
-    # Special handling for CPU category - search both AMD and Intel
+    # Special handling for CPU category - scrape both AMD and Intel category pages
     if category.lower() in ['cpu', 'processor']:
-        logger.info(f"StarTech: CPU category detected, searching for both Ryzen and Intel")
-        ryzen_products = _scrape_startech_search("ryzen", max_pages)
-        intel_products = _scrape_startech_search("intel", max_pages)
+        logger.info(f"StarTech: CPU category detected, scraping Intel and AMD processor pages")
+        intel_products = _scrape_startech_category_url("https://www.startech.com.bd/component/processor/intel-processor", max_pages)
+        amd_products = _scrape_startech_category_url("https://www.startech.com.bd/component/processor/amd-processor", max_pages)
 
         # Combine products and remove duplicates based on name
-        all_products = ryzen_products + intel_products
+        all_products = intel_products + amd_products
         seen_names = set()
         unique_products = []
         for product in all_products:
@@ -162,7 +162,7 @@ def scrape_startech_catalog(category, max_pages=50):
                 seen_names.add(product['name'])
                 unique_products.append(product)
 
-        logger.info(f"StarTech: Total scraped {len(unique_products)} CPU products (Ryzen: {len(ryzen_products)}, Intel: {len(intel_products)})")
+        logger.info(f"StarTech: Total scraped {len(unique_products)} CPU products (Intel: {len(intel_products)}, AMD: {len(amd_products)})")
         return {"products": unique_products, "logo": logo_url}
 
     # Normal category search
@@ -250,6 +250,90 @@ def _scrape_startech_search(search_term, max_pages=50):
 
     except Exception as e:
         logger.error(f"StarTech search error for '{search_term}': {e}", exc_info=True)
+        return []
+    finally:
+        session.close()
+
+
+def _scrape_startech_category_url(category_url, max_pages=50):
+    """Helper function to scrape StarTech category pages (e.g., processor category)"""
+    session = create_session()
+    try:
+        products = []
+        page = 1
+        consecutive_empty = 0
+
+        while page <= max_pages:
+            # Category URLs use ?page=X for pagination
+            url = f"{category_url}?page={page}"
+            logger.info(f"StarTech: Scraping category page {page} from {category_url}")
+
+            headers = {
+                "User-Agent": get_random_user_agent(),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": "https://www.startech.com.bd/"
+            }
+
+            retry_count = 0
+            max_retries = 3
+            response = None
+
+            while retry_count < max_retries:
+                try:
+                    response = session.get(url, headers=headers, timeout=30)
+                    if response.status_code == 200:
+                        break
+                    logger.warning(f"StarTech: Page {page} returned {response.status_code}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(2, 4)
+                    retry_count += 1
+                except (requests.Timeout, requests.ConnectionError) as e:
+                    logger.warning(f"StarTech: Connection error on page {page}: {e}, retry {retry_count+1}/{max_retries}")
+                    smart_delay(3, 6)
+                    retry_count += 1
+
+            if not response or response.status_code != 200:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    break
+                page += 1
+                continue
+
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            items = soup.select(".p-item")
+            if not items:
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    logger.info(f"StarTech: No more products found, stopping at page {page}")
+                    break
+                page += 1
+                continue
+
+            consecutive_empty = 0
+
+            for item in items:
+                name = item.select_one(".p-item-name")
+                price = item.select_one(".price-new") or item.select_one(".p-item-price")
+                img = item.select_one(".p-item-img img")
+                link = item.select_one(".p-item-img a")
+
+                if name and link:
+                    products.append({
+                        "id": str(uuid.uuid4()),
+                        "name": name.text.strip(),
+                        "price": normalize_price(price.text.strip()) if price else "Out of Stock",
+                        "img": (img.get("data-src") or img.get("src") or "") if img else "",
+                        "link": link["href"] if link else ""
+                    })
+
+            page += 1
+            smart_delay(0.2, 0.5)  # Small delay between pages
+
+        return products
+
+    except Exception as e:
+        logger.error(f"StarTech category URL error for '{category_url}': {e}", exc_info=True)
         return []
     finally:
         session.close()
