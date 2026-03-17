@@ -182,13 +182,17 @@ class Command(BaseCommand):
     def create_categories(self, category_names):
         count = 0
         for cat_name in category_names:
+            from django.utils.text import slugify
+            slug = slugify(cat_name)
+
+            # Use slug as lookup to avoid duplicate slug errors
             _, created = Category.objects.update_or_create(
-                name=cat_name,
-                defaults={'is_active': True}
+                slug=slug,
+                defaults={'name': cat_name, 'is_active': True}
             )
             if created:
                 count += 1
-        
+
         return count
 
     def create_shops(self):
