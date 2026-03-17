@@ -145,17 +145,44 @@ def normalize_product_url(url):
 
 def scrape_startech_catalog(category, max_pages=50):
     """Scrape all pages from StarTech for a category"""
+    logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
+
+    # Special handling for CPU category - search both AMD and Intel
+    if category.lower() in ['cpu', 'processor']:
+        logger.info(f"StarTech: CPU category detected, searching for both Ryzen and Intel")
+        ryzen_products = _scrape_startech_search("ryzen", max_pages)
+        intel_products = _scrape_startech_search("intel", max_pages)
+
+        # Combine products and remove duplicates based on name
+        all_products = ryzen_products + intel_products
+        seen_names = set()
+        unique_products = []
+        for product in all_products:
+            if product['name'] not in seen_names:
+                seen_names.add(product['name'])
+                unique_products.append(product)
+
+        logger.info(f"StarTech: Total scraped {len(unique_products)} CPU products (Ryzen: {len(ryzen_products)}, Intel: {len(intel_products)})")
+        return {"products": unique_products, "logo": logo_url}
+
+    # Normal category search
+    products = _scrape_startech_search(category, max_pages)
+    logger.info(f"StarTech: Total scraped {len(products)} products for {category}")
+    return {"products": products, "logo": logo_url}
+
+
+def _scrape_startech_search(search_term, max_pages=50):
+    """Helper function to scrape StarTech for a specific search term"""
     session = create_session()
     try:
         base_url = "https://www.startech.com.bd/product/search"
         products = []
-        logo_url = "https://www.startech.com.bd/catalog/view/theme/starship/images/logo.png"
         page = 1
         consecutive_empty = 0
-        
+
         while page <= max_pages:
-            url = f"{base_url}?search={urllib.parse.quote(category)}&page={page}"
-            logger.info(f"StarTech: Scraping page {page} for {category}")
+            url = f"{base_url}?search={urllib.parse.quote(search_term)}&page={page}"
+            logger.info(f"StarTech: Scraping page {page} for {search_term}")
             
             headers = {
                 "User-Agent": get_random_user_agent(),
@@ -218,13 +245,12 @@ def scrape_startech_catalog(category, max_pages=50):
             
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
-        
-        logger.info(f"StarTech: Total scraped {len(products)} products for {category}")
-        return {"products": products, "logo": logo_url}
-    
+
+        return products
+
     except Exception as e:
-        logger.error(f"StarTech catalog error: {e}", exc_info=True)
-        return {"products": [], "logo": ""}
+        logger.error(f"StarTech search error for '{search_term}': {e}", exc_info=True)
+        return []
     finally:
         session.close()
 
