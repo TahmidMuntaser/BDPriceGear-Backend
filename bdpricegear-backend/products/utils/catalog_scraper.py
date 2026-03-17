@@ -764,16 +764,22 @@ def _scrape_ryans_with_cloudscraper(category, max_pages=50):
 
 
 async def _scrape_ryans_with_playwright(category, max_pages=50):
-
+    """
+    Wrapper to scrape Ryans using Playwright with automatic browser management.
+    Used on cloud hosting (Render, Railway) for better Cloudflare bypass.
+    Now with playwright-stealth for maximum evasion!
+    """
     try:
         from playwright.async_api import async_playwright
-    except ImportError:
-        logger.error("Ryans: Playwright not installed. Install with: playwright install chromium")
+        from playwright_stealth import stealth_async
+    except ImportError as e:
+        logger.error(f"Ryans: Required library not installed: {e}")
+        logger.error("Install with: pip install playwright playwright-stealth && playwright install chromium")
         return {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
 
     try:
         async with async_playwright() as p:
-            # Launch browser in headless mode
+            # Launch browser with stealth flags
             browser = await p.chromium.launch(
                 headless=True,
                 args=[
@@ -781,16 +787,50 @@ async def _scrape_ryans_with_playwright(category, max_pages=50):
                     '--disable-dev-shm-usage',
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 ]
             )
 
-            # Create context with realistic settings
+            # Create context with realistic settings and extra headers
             context = await browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                locale='en-US',
+                timezone_id='Asia/Dhaka',
+                extra_http_headers={
+                    'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Referer': 'https://www.google.com/',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1',
+                }
             )
 
             page = await context.new_page()
+
+            # Apply playwright-stealth - This adds advanced evasion techniques!
+            await stealth_async(page)
+            logger.info("Ryans: Applied stealth mode for enhanced Cloudflare bypass")
+
+            # Hide automation flags (additional layer)
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en', 'bn']
+                });
+                window.chrome = { runtime: {} };
+            """)
 
             # Call the existing Playwright scraper
             result = await scrape_ryans_playwright(page, category, max_pages)
@@ -1174,13 +1214,19 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
                 # Product grid didn't appear — may be CF challenge or empty page
                 pass
 
+            # Simulate human-like behavior: scroll down the page
+            await asyncio.sleep(random.uniform(2.0, 3.0))
+            await playwright_page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
             await asyncio.sleep(random.uniform(1.0, 2.0))
+            await playwright_page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+
             content = await playwright_page.content()
 
-            # If Cloudflare challenge appears, wait and retry once
+            # If Cloudflare challenge appears, wait longer and retry
             if "just a moment" in content.lower() or "checking your browser" in content.lower():
-                logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, waiting 12s...")
-                await asyncio.sleep(12)
+                logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, waiting 20s...")
+                await asyncio.sleep(20)
                 content = await playwright_page.content()
                 if "just a moment" in content.lower() or "checking your browser" in content.lower():
                     logger.warning(f"Ryans: Cloudflare persists on page {page_num}, stopping")
@@ -1240,7 +1286,8 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
             break
 
         page_num += 1
-        await asyncio.sleep(random.uniform(3.0, 5.0))  # Delay between pages to avoid CF rate limit
+        # Longer delay between pages to avoid Cloudflare detection (8-15 seconds)
+        await asyncio.sleep(random.uniform(8.0, 15.0))
 
     logger.info(f"Ryans (Playwright): Total {len(products)} products for {category}")
     return {"products": products, "logo": logo_url}
