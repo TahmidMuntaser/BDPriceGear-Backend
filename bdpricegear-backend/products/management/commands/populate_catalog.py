@@ -235,10 +235,10 @@ class Command(BaseCommand):
             {'name': 'PcHouse', 'website_url': 'https://www.pchouse.com.bd', 'logo_url': 'https://www.pchouse.com.bd/image/catalog/unnamed.png', 'priority': 3},
             {'name': 'UltraTech', 'website_url': 'https://www.ultratech.com.bd', 'logo_url': 'https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp', 'priority': 2},
             {'name': 'PotakaIT', 'website_url': 'https://www.potakait.com', 'logo_url': 'https://www.potakait.com/image/catalog/logo.png', 'priority': 2},
-            {'name': 'ComputerVillage', 'website_url': 'https://www.computervillage.com.bd', 'logo_url': 'https://www.computervillage.com.bd/image/cache/catalog/logo/Computer-Village-Logo-358x90.png', 'priority': 2},
-            {'name': 'SmartBD', 'website_url': 'https://smartbd.com', 'logo_url': 'https://smartbd.com/wp-content/uploads/2021/01/smartbd-logo.png', 'priority': 1},
-            {'name': 'SellTech', 'website_url': 'https://www.selltech.com.bd', 'logo_url': 'https://www.selltech.com.bd/image/cache/catalog/logo-200x50.png', 'priority': 1},
-            {'name': 'GlobalBrand', 'website_url': 'https://www.globalbrand.com.bd', 'logo_url': 'https://www.globalbrand.com.bd/image/cache/catalog/logo-200x50.png', 'priority': 1},
+            {'name': 'ComputerVillage', 'website_url': 'https://www.computervillage.com.bd', 'logo_url': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTaRS07gGm1ZCTLfjw332uhqY10mm3HjwRI9g&s', 'priority': 2},
+            {'name': 'SmartBD', 'website_url': 'https://smartbd.com', 'logo_url': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRlD7rRi78Rxp4LK6SG8beSX4cFkpCcsEfdfQ&s', 'priority': 1},
+            {'name': 'SellTech', 'website_url': 'https://www.selltech.com.bd', 'logo_url': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQlzVet1n4C99TIbxB8kiUmi0EgqHTbt3wivg&s', 'priority': 1},
+            {'name': 'GlobalBrand', 'website_url': 'https://www.globalbrand.com.bd', 'logo_url': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS54nXVOGF6pUE6_5XWEidHmAWhVnj8QyNRog&s', 'priority': 1},
         ]
         
         for shop_data in shops:
