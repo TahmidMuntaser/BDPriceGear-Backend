@@ -113,9 +113,33 @@ class Command(BaseCommand):
             default=['Processor', 'Motherboard', 'RAM', 'SSD', 'HDD', 'Power Supply', 'Cabinet', 'GPU', 'CPU Cooler', 'Monitor', 'Keyboard', 'Mouse'],
             help='PC component categories to scrape'
         )
+        parser.add_argument(
+            '--shops',
+            nargs='+',
+            type=str,
+            default=None,
+            help='Specific shops to scrape (e.g., --shops StarTech Ryans). If not specified, scrapes all shops.'
+        )
+        parser.add_argument(
+            '--max-pages',
+            type=int,
+            default=None,
+            help='Maximum pages to scrape per category (default: 25 locally, 10 on Render)'
+        )
 
     def handle(self, *args, **options):
+        import os
         self.stdout.write(self.style.SUCCESS('Starting catalog population...'))
+
+        # Detect cloud environment
+        IS_CLOUD = bool(os.getenv('RENDER') or os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('DYNO'))
+
+        # Use optimized settings for cloud hosting to avoid timeouts
+        if IS_CLOUD:
+            default_max_pages = 10  # Reduced pages for cloud to avoid timeout
+            self.stdout.write(self.style.WARNING('Cloud environment detected - using optimized settings'))
+        else:
+            default_max_pages = 25  # More pages locally where timeouts are less of an issue
 
         # Map category names to search terms for websites
         category_to_search_term = {
@@ -134,7 +158,8 @@ class Command(BaseCommand):
         }
 
         categories = options['categories']
-        max_pages = 25
+        max_pages = options.get('max_pages') or default_max_pages
+        self.stdout.write(self.style.SUCCESS(f'Max pages per category: {max_pages}'))
 
         categories_created = self.create_categories(categories)
         self.stdout.write(self.style.SUCCESS(f'Categories ready: {categories_created}'))
@@ -147,17 +172,23 @@ class Command(BaseCommand):
 
         # 10 static shops (requests-based) — one shop at a time, all categories
         static_scrapers = [
+            ('Ryans', scrape_ryans_catalog),
             ('StarTech', scrape_startech_catalog),
             ('SkyLand', scrape_skyland_catalog),
             ('PcHouse', scrape_pchouse_catalog),
             ('UltraTech', scrape_ultratech_catalog),
             ('PotakaIT', scrape_potakait_catalog),
-            ('Ryans', scrape_ryans_catalog),  
             ('ComputerVillage', scrape_computervillage_catalog),
             ('SmartBD', scrape_smartbd_catalog),
             ('SellTech', scrape_selltech_catalog),
             ('GlobalBrand', scrape_globalbrand_catalog),
         ]
+
+        # Filter shops if specified
+        selected_shops = options.get('shops')
+        if selected_shops:
+            static_scrapers = [(name, fn) for name, fn in static_scrapers if name in selected_shops]
+            self.stdout.write(self.style.SUCCESS(f'Scraping selected shops: {", ".join([s[0] for s in static_scrapers])}'))
 
         # Sequential: Shop → Category1..N
         self.stdout.write(self.style.SUCCESS('\n=== Scraping all shops (sequential) ==='))

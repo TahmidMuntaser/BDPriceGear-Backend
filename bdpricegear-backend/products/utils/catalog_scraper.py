@@ -1336,7 +1336,7 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
             # If Cloudflare challenge appears, wait longer and retry
             if "just a moment" in content.lower() or "checking your browser" in content.lower():
                 logger.warning(f"Ryans: Cloudflare challenge on page {page_num}, waiting 10s...")
-                await asyncio.sleep(10)
+                await asyncio.sleep(20)
                 content = await playwright_page.content()
                 if "just a moment" in content.lower() or "checking your browser" in content.lower():
                     logger.warning(f"Ryans: Cloudflare persists on page {page_num}, stopping")
@@ -1397,7 +1397,7 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
 
         page_num += 1
         # Delay between pages to avoid Cloudflare detection (3-6 seconds)
-        await asyncio.sleep(random.uniform(3.0, 6.0))
+        await asyncio.sleep(random.uniform(5.0, 12.0))
 
     logger.info(f"Ryans (Playwright): Total {len(products)} products for {category}")
     return {"products": products, "logo": logo_url}
