@@ -172,7 +172,6 @@ class Command(BaseCommand):
 
         # 10 static shops (requests-based) — one shop at a time, all categories
         static_scrapers = [
-            ('Ryans', scrape_ryans_catalog),
             ('StarTech', scrape_startech_catalog),
             ('SkyLand', scrape_skyland_catalog),
             ('PcHouse', scrape_pchouse_catalog),
@@ -181,7 +180,8 @@ class Command(BaseCommand):
             ('ComputerVillage', scrape_computervillage_catalog),
             ('SmartBD', scrape_smartbd_catalog),
             ('SellTech', scrape_selltech_catalog),
-            ('GlobalBrand', scrape_globalbrand_catalog),
+            ('GlobalBrand', scrape_globalbrand_catalog),  
+            ('Ryans', scrape_ryans_catalog),
         ]
 
         # Filter shops if specified
