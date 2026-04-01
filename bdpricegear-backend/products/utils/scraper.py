@@ -8,6 +8,20 @@ from bs4 import BeautifulSoup
 import requests
 
 from playwright.async_api import async_playwright
+from .catalog_scraper import (
+    get_ryans_category_url,
+    scrape_potakait_catalog,
+    scrape_computervillage_catalog,
+    scrape_smartbd_catalog,
+    scrape_selltech_catalog,
+    scrape_globalbrand_catalog,
+)
+
+try:
+    import cloudscraper
+    CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    CLOUDSCRAPER_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scraper")
@@ -27,60 +41,78 @@ def normalize_price(text):
     
 #dynamic scrapper
 
-# ryans 
-async def scrape_ryans(product, context):
-    results = {"products": [], "logo": "https://www.ryans.com/assets/images/ryans-logo.svg"}
-    page = None
-    try:
-        url = f"https://www.ryans.com/search?q={urllib.parse.quote(product)}"
-        page = await context.new_page()
-        
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-        """)
-        
-        await page.goto(url, timeout=15000, wait_until="load")
-        await asyncio.sleep(2)
-        await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-        await asyncio.sleep(1)
+# ryans
+def scrape_ryans(product):
+    logo_url = "https://www.ryans.com/assets/images/ryans-logo.svg"
+    base_url = get_ryans_category_url(product)
+    url = f"{base_url}&limit=30&page=1" if 'search?q=' in base_url else f"{base_url}?limit=30&page=1"
 
-        soup = BeautifulSoup(await page.content(), "html.parser")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,bn;q=0.8",
+        "Referer": "https://www.google.com/",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    def parse_products(html):
+        soup = BeautifulSoup(html, "html.parser")
         items = soup.select(".category-single-product")
-        
+        products = []
+
         for item in items:
-            name_elem = item.select_one(".card-body .card-text a")
+            name_elem = item.select_one(".product-name a") or item.select_one(".card-body .card-text a")
             price_elem = item.select_one(".pr-text")
             link_elem = item.select_one(".image-box a")
             img_elem = item.select_one(".image-box img")
 
-            if name_elem:
-                product_name = name_elem.get_text(strip=True)
-                product_link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else "#"
-                product_price = normalize_price(price_elem.get_text(strip=True)) if price_elem else "Out of Stock"
-                product_img = img_elem["src"] if img_elem and img_elem.has_attr("src") else ""
-                
-                if product_img and not product_img.startswith(('http://', 'https://')):
-                    product_img = urllib.parse.urljoin(url, product_img)
-                
-                results["products"].append({
-                    "id": str(uuid.uuid4()),
-                    "name": product_name,
-                    "price": product_price,
-                    "link": product_link,
-                    "img": product_img,
-                    "in_stock": True
-                })
+            if not name_elem:
+                continue
 
-        logger.info(f"Ryans: Scraped {len(results['products'])} products")
-        return results
+            link = urllib.parse.urljoin(url, link_elem["href"]) if link_elem and link_elem.has_attr("href") else "#"
+            img = (img_elem.get("data-src") or img_elem.get("src") or "") if img_elem else ""
+            if img and not img.startswith(("http://", "https://")):
+                img = urllib.parse.urljoin(url, img)
+
+            products.append({
+                "id": str(uuid.uuid4()),
+                "name": name_elem.get_text(strip=True),
+                "price": normalize_price(price_elem.get_text(strip=True)) if price_elem else "Out of Stock",
+                "link": link,
+                "img": img,
+                "in_stock": True,
+            })
+
+        return products
+
+    if not CLOUDSCRAPER_AVAILABLE:
+        logger.error("Ryans: cloudscraper is not installed")
+        return {"products": [], "logo": logo_url}
+
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True,
+            },
+            delay=5,
+            interpreter='nodejs'
+        )
+        scraper.headers.update(headers)
+        response = scraper.get(url, timeout=45)
+        if response.status_code != 200:
+            logger.warning(f"Ryans: cloudscraper status {response.status_code}")
+            return {"products": [], "logo": logo_url}
+
+        products = parse_products(response.text)
+        logger.info(f"Ryans: Scraped {len(products)} products using cloudscraper")
+        return {"products": products, "logo": logo_url}
     except Exception as e:
-        logger.error(f"Ryans error: {e}")
-        return results
-    finally:
-        if page:
-            await page.close()
+        logger.error(f"Ryans cloudscraper error: {e}")
+        return {"products": [], "logo": logo_url}
 
 
 #static scrapper
@@ -300,31 +332,40 @@ async def scrape_binary_playwright(product, context):
 # potakaIT 
 def scrape_potakait(product):
     try:
-        url = f"https://www.potakait.com/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        products = []
-        
-        logo_url = "https://potakait.com/image/catalog/potaka-logo.png"
-        
-        for item in soup.select(".product-item"):
-            name = item.select_one(".title a")
-            price = item.select_one(".price:not(.old)")
-            img = item.select_one(".product-img img")
-            link = item.select_one(".title a")
-            
-            products.append({
-                "id": str(uuid.uuid4()),
-                "name": name.text.strip() if name else "Name not found",
-                "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                "img": img["src"] if img else "Image not found",
-                "link": link["href"] if link else "Link not found"
-            })
-            
-        return {"products": products, "logo": logo_url}
-    
+        # Reuse catalog scraper URL/selectors and limit to first page.
+        return scrape_potakait_catalog(product, max_pages=1)
     except Exception as e:
-        
         logger.error(f"PotakaIT error: {e}")
+        return {"products": [], "logo": "logo not found"}
+
+
+def scrape_computervillage(product):
+    try:
+        return scrape_computervillage_catalog(product, max_pages=1)
+    except Exception as e:
+        logger.error(f"ComputerVillage error: {e}")
+        return {"products": [], "logo": "logo not found"}
+
+
+def scrape_smartbd(product):
+    try:
+        return scrape_smartbd_catalog(product, max_pages=1)
+    except Exception as e:
+        logger.error(f"SmartBD error: {e}")
+        return {"products": [], "logo": "logo not found"}
+
+
+def scrape_selltech(product):
+    try:
+        return scrape_selltech_catalog(product, max_pages=1)
+    except Exception as e:
+        logger.error(f"SellTech error: {e}")
+        return {"products": [], "logo": "logo not found"}
+
+
+def scrape_globalbrand(product):
+    try:
+        return scrape_globalbrand_catalog(product, max_pages=1)
+    except Exception as e:
+        logger.error(f"GlobalBrand error: {e}")
         return {"products": [], "logo": "logo not found"}

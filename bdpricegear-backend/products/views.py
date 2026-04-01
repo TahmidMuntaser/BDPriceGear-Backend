@@ -12,7 +12,8 @@ from django.shortcuts import get_object_or_404
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
     scrape_startech, scrape_ryans, scrape_skyland,
-    scrape_pchouse, scrape_ultratech, scrape_binary_playwright, scrape_potakait
+    scrape_pchouse, scrape_ultratech, scrape_potakait,
+    scrape_computervillage, scrape_smartbd, scrape_selltech, scrape_globalbrand
 )
 from .models import Product, Category, Shop
 from .serializers import (
@@ -26,7 +27,6 @@ import logging
 import time
 import os
 import threading
-from playwright.async_api import async_playwright
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger("products.views")
@@ -78,58 +78,33 @@ def price_comparison(request):
     price_cache.clear_expired()
     
     async def gather_all_scrapers(product):
-        # Dynamic scrapers
-        async def run_dynamic():
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=['--disable-blink-features=AutomationControlled']
-                )
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    viewport={'width': 1920, 'height': 1080},
-                    locale='en-US',
-                    timezone_id='Asia/Dhaka',
-                    extra_http_headers={
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    }
-                )
+        with ThreadPoolExecutor() as executor:
+            tasks = [
+                executor.submit(scrape_startech, product),
+                executor.submit(scrape_ryans, product),
+                executor.submit(scrape_skyland, product),
+                executor.submit(scrape_pchouse, product),
+                executor.submit(scrape_ultratech, product),
+                executor.submit(scrape_potakait, product),
+                executor.submit(scrape_computervillage, product),
+                executor.submit(scrape_smartbd, product),
+                executor.submit(scrape_selltech, product),
+                executor.submit(scrape_globalbrand, product),
+            ]
+            return [task.result() for task in tasks]
 
-                tasks = [
-                    scrape_ryans(product, context),
-                    scrape_binary_playwright(product, context) 
-                ]
-                results = await asyncio.gather(*tasks)
-                await browser.close()
-                return results
-
-        # Static scrapers in thread pool
-        def run_static():
-            with ThreadPoolExecutor() as executor:
-                tasks = [
-                    executor.submit(scrape_startech, product),
-                    executor.submit(scrape_skyland, product),
-                    executor.submit(scrape_pchouse, product),
-                    executor.submit(scrape_ultratech, product),
-                    executor.submit(scrape_potakait, product),
-                ]
-                return [task.result() for task in tasks]
-
-        # Run both dynamic and static in parallel
-        loop = asyncio.get_event_loop()
-        dynamic_task = run_dynamic()
-        static_task = loop.run_in_executor(None, run_static)
-        
-        # Wait for both to complete
-        dynamic_results, static_results = await asyncio.gather(dynamic_task, static_task)
-        
-        ryans, binary = dynamic_results
-        startech, skyland, pchouse, ultratech, potakait = static_results
-        
-        return ryans, binary, startech, skyland, pchouse, ultratech, potakait
-
-    ryans, binary, startech, skyland, pchouse, ultratech, potakait = asyncio.run(gather_all_scrapers(product))
+    (
+        startech,
+        ryans,
+        skyland,
+        pchouse,
+        ultratech,
+        potakait,
+        computervillage,
+        smartbd,
+        selltech,
+        globalbrand,
+    ) = asyncio.run(gather_all_scrapers(product))
     
     # combine scraper results
     all_shops = [
@@ -138,8 +113,11 @@ def price_comparison(request):
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
-        {"name": "Binary", **binary},
         {"name": "PotakaIT", **potakait},
+        {"name": "ComputerVillage", **computervillage},
+        {"name": "SmartBD", **smartbd},
+        {"name": "SellTech", **selltech},
+        {"name": "GlobalBrand", **globalbrand},
     ]
     
     # filter empty results 
