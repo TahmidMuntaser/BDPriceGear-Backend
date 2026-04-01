@@ -8,6 +8,7 @@ from drf_yasg import openapi
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.conf import settings
 
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
@@ -368,6 +369,16 @@ def compare_product_prices(request, product_id):
 
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
+def ping(request):
+    # Lightweight liveness endpoint for uptime monitors.
+    return Response({
+        "status": "ok",
+        "service": "BDPriceGear Backend"
+    })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
 def health_check(request):
     """
     Health check endpoint for monitoring
@@ -553,6 +564,7 @@ def trigger_update(request):
                     
             except Exception as cmd_error:
                 error_msg = str(cmd_error)
+                error_output = traceback.format_exc()
                 logger.error(f"Command failed: {error_msg}")
                 
                 # Store error details in cache
@@ -713,7 +725,7 @@ def trigger_catalog_update(request):
     import os
     
     # Check if running on Render
-    is_production = os.environ.get('RENDER', False) or not DEBUG
+    is_production = os.environ.get('RENDER', False) or not settings.DEBUG
     catalog_update_in_progress = cache.get('catalog_update_in_progress', False)
     
     if request.method == 'GET':

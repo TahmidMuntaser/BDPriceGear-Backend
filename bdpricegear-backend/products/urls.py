@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     price_comparison,
     ProductViewSet, CategoryViewSet, ShopViewSet,
-    health_check, trigger_update, compare_product_prices,
+    ping, health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
     run_migrations, popular_products, reset_scraping_lock
 )
@@ -16,6 +16,7 @@ router.register(r'shops', ShopViewSet, basename='shop')
 
 # Base URLs (always available)
 urlpatterns = [
+    path('ping/', ping, name='ping'),
     path('price-comparison/', price_comparison, name='price-comparison'),
     path('products/<int:product_id>/compare/', compare_product_prices, name='compare-product-prices'),
     path('health/', health_check, name='health-check'),
