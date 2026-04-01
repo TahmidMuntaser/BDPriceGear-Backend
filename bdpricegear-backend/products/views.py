@@ -11,7 +11,7 @@ from django.shortcuts import get_object_or_404
 
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
-    scrape_startech, scrape_ryans, scrape_skyland,
+    scrape_startech, scrape_skyland,
     scrape_pchouse, scrape_ultratech, scrape_potakait,
     scrape_computervillage, scrape_smartbd, scrape_selltech, scrape_globalbrand
 )
@@ -81,7 +81,7 @@ def price_comparison(request):
         with ThreadPoolExecutor() as executor:
             tasks = [
                 executor.submit(scrape_startech, product),
-                executor.submit(scrape_ryans, product),
+                # executor.submit(scrape_ryans, product),  # Disabled for realtime scraping
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
                 executor.submit(scrape_ultratech, product),
@@ -95,7 +95,7 @@ def price_comparison(request):
 
     (
         startech,
-        ryans,
+        # ryans,
         skyland,
         pchouse,
         ultratech,
@@ -109,7 +109,7 @@ def price_comparison(request):
     # combine scraper results
     all_shops = [
         {"name": "StarTech", **startech},
-        {"name": "Ryans", **ryans},
+        # {"name": "Ryans", **ryans},
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
