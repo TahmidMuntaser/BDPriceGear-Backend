@@ -367,10 +367,12 @@ def compare_product_prices(request, product_id):
     })
 
 
-@api_view(['GET'])
+@api_view(['GET', 'HEAD', 'OPTIONS'])
 @permission_classes([permissions.AllowAny])
 def ping(request):
     # Lightweight liveness endpoint for uptime monitors.
+    if request.method in ['HEAD', 'OPTIONS']:
+        return Response(status=200)
     return Response({
         "status": "ok",
         "service": "BDPriceGear Backend"
