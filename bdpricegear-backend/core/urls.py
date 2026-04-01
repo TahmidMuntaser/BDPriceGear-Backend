@@ -35,7 +35,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('products.urls')),
     path('api/', include('api.urls')),  # Authentication endpoints
-    path('', lambda request: HttpResponseRedirect('/api/price-comparison/')),
+    path('', lambda request: HttpResponseRedirect('/api/')),
     path('docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
    
 ]
