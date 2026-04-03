@@ -4,7 +4,7 @@ from rest_framework.response import Response
 
 class FlexiblePagination(PageNumberPagination):
  
-    page_size = 20
+    page_size = 1000
     page_size_query_param = 'page_size'
     max_page_size = 1000  # Max per page (when not using 'all')
     
@@ -23,7 +23,7 @@ class FlexiblePagination(PageNumberPagination):
         return super().paginate_queryset(queryset, request, view)
     
     def get_paginated_response(self, data):
-        """Return response with or without pagination metadata."""
+        # Return response with or without pagination metadata.
         if getattr(self, '_no_pagination', False):
             return Response({
                 'count': self._count,

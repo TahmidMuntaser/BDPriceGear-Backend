@@ -22,6 +22,8 @@ from .serializers import (
     CategorySerializer, ShopSerializer, PopularProductSerializer
 )
 from .filters import ProductFilter
+from .utils.smart_search import apply_smart_search
+from .pagination import FlexiblePagination
 
 import asyncio
 import logging
@@ -34,8 +36,104 @@ logger = logging.getLogger("products.views")
 
 
 class ScrapingRateThrottle(AnonRateThrottle):
-    """Rate limit for scraping endpoints - 3 requests per hour per IP"""
+    # Rate limit for scraping endpoints - 3 requests per hour per IP
     rate = '3/hour'
+
+
+@swagger_auto_schema(
+    method='get',
+    manual_parameters=[
+        openapi.Parameter(
+            'q',
+            openapi.IN_QUERY,
+            description="Search query - supports product names, categories, and attributes (e.g., '8GB RAM', 'laptop', '512GB SSD')",
+            type=openapi.TYPE_STRING,
+            required=True
+        ),
+        openapi.Parameter(
+            'page',
+            openapi.IN_QUERY,
+            description="Page number",
+            type=openapi.TYPE_INTEGER,
+            required=False
+        ),
+        openapi.Parameter(
+            'page_size',
+            openapi.IN_QUERY,
+            description="Results per page (default 20, max 1000, or 'all')",
+            type=openapi.TYPE_STRING,
+            required=False
+        )
+    ],
+    operation_description="Smart navbar search with intelligent category detection and filtering",
+    responses={
+        200: "List of matching products with pagination",
+        400: "Missing query parameter"
+    }
+)
+@api_view(['GET', 'HEAD', 'OPTIONS'])
+@permission_classes([permissions.AllowAny])
+def navbar_search(request):
+    # Smart navbar search endpoint with product-list pagination pattern
+    # GET /api/search/?q=<query>&page=1&page_size=20
+    # Query params: q=search query (required), page=page number (optional), page_size=results per page (optional, supports 'all')
+    # Features: category detection, text normalization (8GB, 8 GB, 8 gb work), category-aware filtering, prevents irrelevant mixing
+    # Examples: /api/search/?q=laptop, /api/search/?q=laptop&page=2&page_size=20, /api/search/?q=8GB+RAM&page_size=all
+    
+    # Handle CORS preflight requests
+    if request.method == 'OPTIONS':
+        return Response(status=200)
+    
+    if request.method == 'HEAD':
+        return Response(status=200)
+    
+    # Get search query
+    query = request.GET.get('q', '').strip()
+    
+    if not query:
+        return Response({
+            "error": "Missing 'q' query parameter",
+            "example": "/api/search/?q=laptop"
+        }, status=400)
+    
+    # Get base queryset
+    queryset = Product.objects.all().select_related('category', 'shop')
+    
+    # Apply smart search algorithm
+    filtered_queryset = apply_smart_search(queryset, query)
+
+    # Use the same pagination logic/shape as /api/products/
+    paginator = FlexiblePagination()
+    page = paginator.paginate_queryset(filtered_queryset, request)
+
+    if page is not None:
+        serializer = ProductListSerializer(page, many=True)
+        page_number = paginator.page.number
+        total_pages = paginator.page.paginator.num_pages
+
+        return Response({
+            'count': paginator.page.paginator.count,
+            'next': paginator.get_next_link(),
+            'previous': paginator.get_previous_link(),
+            'results': serializer.data,
+            'pagination': {
+                'current_page': page_number,
+                'total_pages': total_pages,
+                'page_size': len(serializer.data),
+                'has_next': paginator.page.has_next(),
+                'has_previous': paginator.page.has_previous(),
+                'next_page': page_number + 1 if paginator.page.has_next() else None,
+                'previous_page': page_number - 1 if paginator.page.has_previous() else None,
+            },
+        })
+
+    serializer = ProductListSerializer(filtered_queryset, many=True)
+    return Response({
+        'count': len(serializer.data),
+        'next': None,
+        'previous': None,
+        'results': serializer.data,
+    })
 
 @swagger_auto_schema(
     method='get',

@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     price_comparison,
+    navbar_search,
     ProductViewSet, CategoryViewSet, ShopViewSet,
     ping, health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
@@ -17,6 +18,7 @@ router.register(r'shops', ShopViewSet, basename='shop')
 # Base URLs (always available)
 urlpatterns = [
     path('ping/', ping, name='ping'),
+    path('search/', navbar_search, name='navbar-search'),
     path('price-comparison/', price_comparison, name='price-comparison'),
     path('products/<int:product_id>/compare/', compare_product_prices, name='compare-product-prices'),
     path('health/', health_check, name='health-check'),
