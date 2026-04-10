@@ -20,9 +20,6 @@ class ProductFilter(django_filters.FilterSet):
     min_price = django_filters.NumberFilter(field_name='current_price', lookup_expr='gte')
     max_price = django_filters.NumberFilter(field_name='current_price', lookup_expr='lte')
     
-    # Brand filter
-    brand = django_filters.CharFilter(field_name='brand', lookup_expr='icontains')
-    
     # Stock status
     in_stock = django_filters.BooleanFilter(method='filter_in_stock', label='In Stock')
     
@@ -31,13 +28,12 @@ class ProductFilter(django_filters.FilterSet):
     
     class Meta:
         model = Product
-        fields = ['category', 'shop', 'brand', 'stock_status', 'is_available']
+        fields = ['category', 'shop', 'stock_status', 'is_available']
     
     def filter_search(self, queryset, name, value):
-        # Search in product name, brand, and description
+        # Search in product name and description
         return queryset.filter(
             models.Q(name__icontains=value) |
-            models.Q(brand__icontains=value) |
             models.Q(description__icontains=value)
         )
     

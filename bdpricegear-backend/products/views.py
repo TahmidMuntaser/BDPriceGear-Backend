@@ -245,7 +245,6 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     # - ?shop=startech
     # - ?min_price=10000&max_price=50000
     # - ?search=gaming
-    # - ?brand=asus
     # - ?in_stock=true
     # - ?on_sale=true
     # - ?show_unavailable=true (to include out of stock items)
@@ -254,7 +253,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Product.objects.all().select_related('category', 'shop')
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = ProductFilter
-    search_fields = ['name', 'brand', 'description']
+    search_fields = ['name', 'description']
     ordering_fields = ['current_price', 'created_at', 'discount_percentage', 'name']
     ordering = ['-created_at']
     
@@ -297,6 +296,16 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         instance.save(update_fields=['views_count'])
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='best-alternatives')
+    def best_alternatives(self, request, *args, **kwargs):
+        # Lightweight endpoint for frontend sections that only need recommendations.
+        instance = self.get_object()
+        recommendations = ProductDetailSerializer(instance).data.get('best_alternatives', [])
+        return Response({
+            'product_id': instance.id,
+            'best_alternatives': recommendations,
+        })
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
