@@ -6,7 +6,8 @@ from .views import (
     ProductViewSet, CategoryViewSet, ShopViewSet,
     ping, health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
-    run_migrations, popular_products, reset_scraping_lock
+    run_migrations, popular_products, reset_scraping_lock,
+    add_to_wishlist, get_user_wishlist, remove_from_wishlist
 )
 import os
 
@@ -21,6 +22,9 @@ urlpatterns = [
     path('search/', navbar_search, name='navbar-search'),
     path('price-comparison/', price_comparison, name='price-comparison'),
     path('products/<int:product_id>/compare/', compare_product_prices, name='compare-product-prices'),
+    path('wishlist/', get_user_wishlist, name='wishlist-list'),
+    path('wishlist/add/', add_to_wishlist, name='wishlist-add'),
+    path('wishlist/remove/', remove_from_wishlist, name='wishlist-remove'),
     path('health/', health_check, name='health-check'),
     path('popular-products/', popular_products, name='popular-products'),
     path('', include(router.urls)),

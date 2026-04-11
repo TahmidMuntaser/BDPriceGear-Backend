@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Shop, Product, PriceHistory
+from .models import Category, Shop, Product, PriceHistory, Wishlist
 
 
 @admin.register(Category)
@@ -69,4 +69,12 @@ class PriceHistoryAdmin(admin.ModelAdmin):
     
     def has_delete_permission(self, request, obj=None):
         return True  # Allow deletion of old records
+
+
+@admin.register(Wishlist)
+class WishlistAdmin(admin.ModelAdmin):
+    list_display = ['user', 'product', 'created_at']
+    list_filter = ['created_at', 'user']
+    search_fields = ['user__email', 'product__name']
+    readonly_fields = ['created_at']
 

@@ -16,10 +16,11 @@ from .utils.scraper import (
     scrape_pchouse, scrape_ultratech, scrape_potakait,
     scrape_computervillage, scrape_smartbd, scrape_selltech, scrape_globalbrand
 )
-from .models import Product, Category, Shop
+from .models import Product, Category, Shop, Wishlist
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer,
-    CategorySerializer, ShopSerializer, PopularProductSerializer
+    CategorySerializer, ShopSerializer, PopularProductSerializer,
+    WishlistInputSerializer, WishlistItemSerializer
 )
 from .filters import ProductFilter
 from .utils.smart_search import apply_smart_search
@@ -1218,3 +1219,98 @@ def run_migrations(request):
             "message": f"Migration failed: {str(e)}",
             "timestamp": timezone.now().isoformat()
         }, status=500)
+
+
+# ========================================
+# WISHLIST API
+# ========================================
+
+@swagger_auto_schema(
+    method='post',
+    request_body=WishlistInputSerializer,
+    responses={
+        201: openapi.Response(description='Product added to wishlist'),
+        400: 'Invalid payload or duplicate wishlist item',
+        401: 'Unauthorized',
+        404: 'Product not found',
+    },
+    operation_description='Add a product to the authenticated user wishlist',
+    operation_id='wishlist_add',
+    tags=['Wishlist']
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def add_to_wishlist(request):
+    serializer = WishlistInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    product_id = serializer.validated_data['product_id']
+    product = Product.objects.filter(id=product_id).first()
+    if not product:
+        return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    wishlist_item, created = Wishlist.objects.get_or_create(user=request.user, product=product)
+    if not created:
+        return Response(
+            {'error': 'Product is already in your wishlist.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {
+            'message': 'Product added to wishlist.',
+            'item': WishlistItemSerializer(wishlist_item).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@swagger_auto_schema(
+    method='get',
+    responses={
+        200: WishlistItemSerializer(many=True),
+        401: 'Unauthorized',
+    },
+    operation_description='Get wishlist items for the authenticated user',
+    operation_id='wishlist_list',
+    tags=['Wishlist']
+)
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_user_wishlist(request):
+    queryset = Wishlist.objects.filter(user=request.user).select_related(
+        'product', 'product__category', 'product__shop'
+    )
+    items = WishlistItemSerializer(queryset, many=True)
+    return Response({'count': len(items.data), 'results': items.data}, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='delete',
+    request_body=WishlistInputSerializer,
+    responses={
+        200: openapi.Response(description='Product removed from wishlist'),
+        400: 'Invalid payload',
+        401: 'Unauthorized',
+        404: 'Product not found in wishlist',
+    },
+    operation_description='Remove a product from the authenticated user wishlist',
+    operation_id='wishlist_remove',
+    tags=['Wishlist']
+)
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def remove_from_wishlist(request):
+    serializer = WishlistInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    product_id = serializer.validated_data['product_id']
+    deleted_count, _ = Wishlist.objects.filter(user=request.user, product_id=product_id).delete()
+
+    if deleted_count == 0:
+        product_exists = Product.objects.filter(id=product_id).exists()
+        if not product_exists:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Product is not in your wishlist.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response({'message': 'Product removed from wishlist.'}, status=status.HTTP_200_OK)

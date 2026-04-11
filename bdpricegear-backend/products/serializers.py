@@ -2,7 +2,7 @@ from decimal import Decimal
 import re
 
 from rest_framework import serializers
-from .models import Product, Category, Shop, PriceHistory
+from .models import Product, Category, Shop, PriceHistory, Wishlist
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -234,3 +234,15 @@ class PopularProductSerializer(serializers.Serializer):
     current_price = serializers.DecimalField(max_digits=10, decimal_places=2)
     image_url = serializers.URLField()
     shop_name = serializers.CharField()
+
+
+class WishlistInputSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(min_value=1)
+
+
+class WishlistItemSerializer(serializers.ModelSerializer):
+    product = ProductListSerializer(read_only=True)
+
+    class Meta:
+        model = Wishlist
+        fields = ['id', 'product', 'created_at']
