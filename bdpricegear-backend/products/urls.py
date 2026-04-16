@@ -7,7 +7,8 @@ from .views import (
     ping, health_check, trigger_update, compare_product_prices,
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
     run_migrations, popular_products, reset_scraping_lock,
-    add_to_wishlist, get_user_wishlist, remove_from_wishlist
+    add_to_wishlist, get_user_wishlist, remove_from_wishlist,
+    subscribe_to_stock_notification, unsubscribe_from_stock_notification
 )
 import os
 
@@ -25,6 +26,8 @@ urlpatterns = [
     path('wishlist/', get_user_wishlist, name='wishlist-list'),
     path('wishlist/add/', add_to_wishlist, name='wishlist-add'),
     path('wishlist/remove/', remove_from_wishlist, name='wishlist-remove'),
+    path('stock-notifications/subscribe/', subscribe_to_stock_notification, name='stock-notification-subscribe'),
+    path('stock-notifications/unsubscribe/', unsubscribe_from_stock_notification, name='stock-notification-unsubscribe'),
     path('health/', health_check, name='health-check'),
     path('popular-products/', popular_products, name='popular-products'),
     path('', include(router.urls)),

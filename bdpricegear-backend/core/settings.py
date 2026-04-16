@@ -28,7 +28,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "unsafe-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = ['bdpricegear.onrender.com', 'bdpricegear-scraper.onrender.com', 'localhost', '127.0.0.1', '*.railway.app']
+ALLOWED_HOSTS = ['bdpricegear.onrender.com', 'bdpricegear-scraper.onrender.com', 'localhost', '127.0.0.1']
 
 # Security Settings for Production
 if not DEBUG:
@@ -57,6 +57,21 @@ import os
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# ========================================
+# EMAIL CONFIGURATION
+# ========================================
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'webmaster@localhost')
+
+if EMAIL_HOST and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 
 # Application definition
@@ -211,7 +226,7 @@ if os.environ.get('DATABASE_URL'):
         # Disable server-side cursors for transaction pooler compatibility
         DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
     else:
-        # Session Pooler Configuration (port 5432) - RECOMMENDED for Render/Railway
+        # Session Pooler Configuration (port 5432) - RECOMMENDED for Render
         # Supports persistent connections - better for long-running servers
         DATABASES = {
             'default': dj_database_url.config(

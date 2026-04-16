@@ -688,7 +688,7 @@ def scrape_potakait_catalog(category, max_pages=50):
 def scrape_ryans_catalog(category, max_pages=50):
     """
     Smart Ryans scraper that auto-detects environment:
-    - On Render/Railway: Uses Playwright (bypasses Cloudflare)
+    - On cloud hosting: Uses Playwright (bypasses Cloudflare)
     - Locally: Uses cloudscraper (faster)
     """
     import os
@@ -696,8 +696,6 @@ def scrape_ryans_catalog(category, max_pages=50):
     # Detect if running on cloud hosting
     IS_CLOUD = (
         os.getenv('RENDER') or
-        os.getenv('RAILWAY_ENVIRONMENT') or
-        os.getenv('RAILWAY_SERVICE_NAME') or
         os.getenv('DYNO')  # Heroku
     )
 
@@ -876,7 +874,7 @@ def _scrape_ryans_with_cloudscraper(category, max_pages=50):
 async def _scrape_ryans_with_playwright(category, max_pages=50):
     """
     Wrapper to scrape Ryans using Playwright with automatic browser management.
-    Used on cloud hosting (Render, Railway) for better Cloudflare bypass.
+    Used on cloud hosting for better Cloudflare bypass.
     Now with playwright-stealth for maximum evasion!
     """
     try:

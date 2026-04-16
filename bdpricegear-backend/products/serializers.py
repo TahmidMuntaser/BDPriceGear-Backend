@@ -3,6 +3,7 @@ import re
 
 from rest_framework import serializers
 from .models import Product, Category, Shop, PriceHistory, Wishlist
+from .models import Product, Category, Shop, PriceHistory, Wishlist, StockSubscription
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -44,6 +45,21 @@ class ProductListSerializer(serializers.ModelSerializer):
     category_slug = serializers.CharField(source='category.slug', read_only=True)
     shop_name = serializers.CharField(source='shop.name', read_only=True)
     shop_logo = serializers.CharField(source='shop.logo_url', read_only=True)
+    is_stock_subscribed = serializers.SerializerMethodField()
+
+    def get_is_stock_subscribed(self, obj):
+        request = self.context.get('request')
+        if not request or not getattr(request, 'user', None) or not request.user.is_authenticated:
+            return False
+
+        subscribed_product_ids = getattr(self, '_subscribed_product_ids', None)
+        if subscribed_product_ids is None:
+            subscribed_product_ids = set(
+                StockSubscription.objects.filter(user=request.user).values_list('product_id', flat=True)
+            )
+            self._subscribed_product_ids = subscribed_product_ids
+
+        return obj.id in subscribed_product_ids
     
     class Meta:
         model = Product
@@ -51,7 +67,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             'id', 'name', 'slug', 'category_name', 'category_slug',
             'shop_name', 'shop_logo', 'image_url', 'product_url',
             'current_price', 'stock_status', 'is_available', 'currency',
-            'created_at', 'updated_at'
+            'is_stock_subscribed', 'created_at', 'updated_at'
         ]
 
 
@@ -64,6 +80,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     highest_price = serializers.SerializerMethodField()
     average_price = serializers.SerializerMethodField()
     best_alternatives = serializers.SerializerMethodField()
+    is_stock_subscribed = serializers.SerializerMethodField()
+
+    def get_is_stock_subscribed(self, obj):
+        request = self.context.get('request')
+        if not request or not getattr(request, 'user', None) or not request.user.is_authenticated:
+            return False
+
+        return StockSubscription.objects.filter(user=request.user, product=obj).exists()
     
     class Meta:
         model = Product
@@ -246,3 +270,13 @@ class WishlistItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wishlist
         fields = ['id', 'product', 'created_at']
+
+class StockSubscriptionInputSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField(min_value=1)
+
+class StockSubscriptionSerializer(serializers.ModelSerializer):
+    product = ProductListSerializer(read_only=True)
+
+    class Meta:
+        model = StockSubscription
+        fields = ['id', 'product', 'created_at', 'notified_at']

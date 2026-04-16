@@ -1,3 +1,5 @@
+from products.models import Product, Category, Shop, PriceHistory
+from products.utils.stock_notifications import send_back_in_stock_notifications
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.db import transaction, close_old_connections
@@ -6,8 +8,6 @@ import urllib.parse
 import re
 
 logger = logging.getLogger(__name__)
-
-from products.models import Product, Shop, Category, PriceHistory
 from products.utils.catalog_scraper import (
     scrape_startech_catalog, scrape_skyland_catalog, scrape_pchouse_catalog,
     scrape_ultratech_catalog, scrape_potakait_catalog,
@@ -132,7 +132,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Starting catalog population...'))
 
         # Detect cloud environment
-        IS_CLOUD = bool(os.getenv('RENDER') or os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('DYNO'))
+        IS_CLOUD = bool(os.getenv('RENDER') or os.getenv('DYNO'))
 
         # Use optimized settings for cloud hosting to avoid timeouts
         if IS_CLOUD:
@@ -335,6 +335,7 @@ class Command(BaseCommand):
         products_to_create = []
         products_to_update = []
         price_histories = []
+        restocked_product_ids = []
         # Track URLs we're adding in this batch to prevent duplicates within the batch
         urls_in_batch = set(existing_by_url.keys())
         
@@ -373,6 +374,10 @@ class Command(BaseCommand):
             existing_product = existing_by_url.get(product_url)
             
             if existing_product:
+                previous_stock_status = existing_product.stock_status
+                previous_is_available = existing_product.is_available
+                previous_price = existing_product.current_price
+
                 # Update existing
                 existing_product.name = product_name
                 existing_product.category = category
@@ -385,13 +390,21 @@ class Command(BaseCommand):
                 updated_count += 1
                 
                 # Price history if changed
-                if float(existing_product.current_price) != float(current_price):
+                if float(previous_price) != float(current_price):
                     price_histories.append(PriceHistory(
                         product=existing_product,
                         price=current_price,
                         stock_status=stock_status,
                         recorded_at=now
                     ))
+
+                if (
+                    previous_stock_status == 'out_of_stock'
+                    and previous_is_available is False
+                    and stock_status == 'in_stock'
+                    and is_available is True
+                ):
+                    restocked_product_ids.append(existing_product.id)
             else:
                 # Create new
                 new_product = Product(
@@ -429,6 +442,14 @@ class Command(BaseCommand):
         
         if price_histories:
             PriceHistory.objects.bulk_create(price_histories, batch_size=50)
+
+        notification_summary = send_back_in_stock_notifications(restocked_product_ids)
+        if notification_summary['sent']:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Sent {notification_summary['sent']} stock notification emails for {notification_summary['products']} products"
+                )
+            )
         
         return created_count, updated_count
 

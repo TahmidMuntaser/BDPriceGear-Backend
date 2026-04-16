@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Category, Shop, Product, PriceHistory, Wishlist
+from .models import Category, Shop, Product, PriceHistory, Wishlist, StockSubscription
 
 
 @admin.register(Category)
@@ -77,4 +78,11 @@ class WishlistAdmin(admin.ModelAdmin):
     list_filter = ['created_at', 'user']
     search_fields = ['user__email', 'product__name']
     readonly_fields = ['created_at']
+
+@admin.register(StockSubscription)
+class StockSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ['user', 'product', 'notified_at', 'created_at']
+    list_filter = ['created_at', 'notified_at']
+    search_fields = ['user__email', 'product__name']
+    readonly_fields = ['created_at', 'notified_at']
 

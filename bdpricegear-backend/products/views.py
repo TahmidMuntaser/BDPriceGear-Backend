@@ -17,10 +17,12 @@ from .utils.scraper import (
     scrape_computervillage, scrape_smartbd, scrape_selltech, scrape_globalbrand
 )
 from .models import Product, Category, Shop, Wishlist
+from .models import Product, Category, Shop, Wishlist, StockSubscription
 from .serializers import (
     ProductListSerializer, ProductDetailSerializer,
     CategorySerializer, ShopSerializer, PopularProductSerializer,
-    WishlistInputSerializer, WishlistItemSerializer
+    WishlistInputSerializer, WishlistItemSerializer,
+    StockSubscriptionInputSerializer, StockSubscriptionSerializer
 )
 from .filters import ProductFilter
 from .utils.smart_search import apply_smart_search
@@ -108,7 +110,7 @@ def navbar_search(request):
     page = paginator.paginate_queryset(filtered_queryset, request)
 
     if page is not None:
-        serializer = ProductListSerializer(page, many=True)
+        serializer = ProductListSerializer(page, many=True, context={'request': request})
         page_number = paginator.page.number
         total_pages = paginator.page.paginator.num_pages
 
@@ -128,7 +130,7 @@ def navbar_search(request):
             },
         })
 
-    serializer = ProductListSerializer(filtered_queryset, many=True)
+    serializer = ProductListSerializer(filtered_queryset, many=True, context={'request': request})
     return Response({
         'count': len(serializer.data),
         'next': None,
@@ -1227,6 +1229,92 @@ def run_migrations(request):
 
 @swagger_auto_schema(
     method='post',
+    request_body=StockSubscriptionInputSerializer,
+    responses={
+        201: openapi.Response(description='Subscription created'),
+        400: 'Invalid payload, duplicate subscription, or product is already in stock',
+        401: 'Unauthorized',
+        404: 'Product not found',
+    },
+    operation_description='Subscribe the authenticated user to a back-in-stock alert for an out-of-stock product',
+    operation_id='stock_subscription_create',
+    tags=['Stock Notifications']
+)
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def subscribe_to_stock_notification(request):
+    serializer = StockSubscriptionInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    product_id = serializer.validated_data['product_id']
+    product = Product.objects.select_related('shop').filter(id=product_id).first()
+    if not product:
+        return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if product.stock_status != 'out_of_stock' or product.is_available:
+        return Response(
+            {'error': 'Stock notifications are only available for out-of-stock products.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    subscription, created = StockSubscription.objects.get_or_create(
+        user=request.user,
+        product=product,
+    )
+
+    if not created:
+        return Response(
+            {'error': 'You are already subscribed to this product.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {
+            'message': 'Subscription created successfully.',
+            'subscription': StockSubscriptionSerializer(subscription, context={'request': request}).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@swagger_auto_schema(
+    method='delete',
+    request_body=StockSubscriptionInputSerializer,
+    responses={
+        200: openapi.Response(description='Subscription removed'),
+        400: 'Invalid payload',
+        401: 'Unauthorized',
+        404: 'Subscription not found',
+    },
+    operation_description='Unsubscribe the authenticated user from a back-in-stock alert for a product',
+    operation_id='stock_subscription_remove',
+    tags=['Stock Notifications']
+)
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def unsubscribe_from_stock_notification(request):
+    serializer = StockSubscriptionInputSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    product_id = serializer.validated_data['product_id']
+    deleted_count, _ = StockSubscription.objects.filter(
+        user=request.user,
+        product_id=product_id,
+    ).delete()
+
+    if deleted_count == 0:
+        product_exists = Product.objects.filter(id=product_id).exists()
+        if not product_exists:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Subscription not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(
+        {'message': 'Subscription removed successfully.'},
+        status=status.HTTP_200_OK,
+    )
+
+@swagger_auto_schema(
+    method='post',
     request_body=WishlistInputSerializer,
     responses={
         201: openapi.Response(description='Product added to wishlist'),
@@ -1259,7 +1347,7 @@ def add_to_wishlist(request):
     return Response(
         {
             'message': 'Product added to wishlist.',
-            'item': WishlistItemSerializer(wishlist_item).data,
+            'item': WishlistItemSerializer(wishlist_item, context={'request': request}).data,
         },
         status=status.HTTP_201_CREATED,
     )
@@ -1281,7 +1369,7 @@ def get_user_wishlist(request):
     queryset = Wishlist.objects.filter(user=request.user).select_related(
         'product', 'product__category', 'product__shop'
     )
-    items = WishlistItemSerializer(queryset, many=True)
+    items = WishlistItemSerializer(queryset, many=True, context={'request': request})
     return Response({'count': len(items.data), 'results': items.data}, status=status.HTTP_200_OK)
 
 

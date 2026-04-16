@@ -155,3 +155,23 @@ class Wishlist(models.Model):
     def __str__(self):
         return f"{self.user.email} -> {self.product.name}"
 
+class StockSubscription(models.Model):
+    # One-time notification subscription for back-in-stock alerts.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stock_notifications')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stock_subscriptions')
+    created_at = models.DateTimeField(auto_now_add=True)
+    notified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'product'], name='unique_user_product_stock_subscription')
+        ]
+        indexes = [
+            models.Index(fields=['product', 'notified_at']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.product.name}"
+
