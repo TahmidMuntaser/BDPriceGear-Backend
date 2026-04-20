@@ -9,6 +9,9 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
+from django.core.cache import cache
+import hashlib
+import uuid
 
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
@@ -1221,6 +1224,383 @@ def run_migrations(request):
             "message": f"Migration failed: {str(e)}",
             "timestamp": timezone.now().isoformat()
         }, status=500)
+
+
+# ========================================
+# CHATBOT API
+# ========================================
+
+CHATBOT_MEMORY_TTL = 60 * 60 * 24
+
+
+def _get_chatbot_memory_key(request, payload_state):
+    raw_request = getattr(request, '_request', request)
+    session = getattr(raw_request, 'session', None)
+
+    conversation_id = None
+    if isinstance(payload_state, dict):
+        conversation_id = payload_state.get('conversation_id')
+
+    if not conversation_id:
+        conversation_id = request.data.get('conversation_id') if isinstance(request.data, dict) else None
+
+    if not conversation_id:
+        conversation_id = request.headers.get('X-Chatbot-Conversation-Id')
+
+    if not conversation_id and session is not None:
+        conversation_id = session.session_key
+
+    if not conversation_id:
+        remote_addr = request.META.get('REMOTE_ADDR', 'unknown')
+        user_agent = request.META.get('HTTP_USER_AGENT', 'unknown')
+        fingerprint = hashlib.sha256(f'{remote_addr}|{user_agent}'.encode('utf-8')).hexdigest()[:16]
+        conversation_id = f'anonymous-{fingerprint}'
+
+    return f'chatbot_memory:{conversation_id}', conversation_id
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def chatbot_message(request):
+   
+    try:
+        payload = request.data or {}
+        user_input = str(payload.get('message', '')).strip()
+        if not user_input:
+            return Response({
+                'error': "Missing 'message' in request body."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Accept client state if provided; otherwise fall back to server-side cache/session
+        # so follow-up messages still keep context.
+        state = payload.get('state')
+        raw_request = getattr(request, '_request', request)
+        session = getattr(raw_request, 'session', None)
+        memory_key, conversation_id = _get_chatbot_memory_key(request, state)
+        if not isinstance(state, dict) or not state:
+            session_state = session.get('chatbot_state', {}) if session is not None else {}
+            state = cache.get(memory_key, {}) or session_state or {}
+
+        last_budget = state.get('last_budget')
+        last_purchase_mode = state.get('last_purchase_mode')
+        last_lookup_context = state.get('last_lookup_context') or {}
+        last_build_preferences = state.get('last_build_preferences') or {}
+        last_build_request = state.get('last_build_request', '') or ''
+        last_build_response_text = state.get('last_build_response_text', '') or ''
+        conversation = state.get('conversation') or []
+
+        if not isinstance(last_lookup_context, dict):
+            last_lookup_context = {}
+        if not isinstance(last_build_preferences, dict):
+            last_build_preferences = {}
+        if not isinstance(conversation, list):
+            conversation = []
+
+        from chatbot import (
+            append_chat_turn,
+            build_pc_response,
+            build_with_context,
+            call_openrouter,
+            detect_brand_intent,
+            detect_component_intent,
+            estimate_minimum_build_budget_response,
+            format_build_response_for_terminal,
+            format_product_lookup_response,
+            out_of_scope_pc_redirect_response,
+            small_talk_response,
+            detect_lookup_mode,
+            is_lookup_next_request,
+            parse_lookup_result_limit,
+            is_pc_domain_general_question,
+            is_build_budget_adjustment_request,
+            is_build_continue_request,
+            is_db_only_commerce_query,
+            is_no_budget_followup,
+            parse_build_preferences,
+            parse_total_build_budget,
+            plan_chat_route,
+            product_lookup_response,
+        )
+
+        route = plan_chat_route(
+            user_input=user_input,
+            last_budget=last_budget,
+            last_purchase_mode=last_purchase_mode,
+            has_lookup_context=bool(last_lookup_context),
+        )
+
+        build_routes = {'build', 'build_followup', 'build_min_budget', 'build_ask_budget', 'build_details'}
+
+        # Keep shopping/build queries DB-grounded before any generic LLM path.
+        if route not in build_routes and (
+            is_db_only_commerce_query(user_input) or (
+                last_purchase_mode == 'build'
+                and (
+                    is_no_budget_followup(user_input)
+                    or is_build_continue_request(user_input)
+                    or is_build_budget_adjustment_request(user_input)
+                )
+            )
+        ):
+            if last_purchase_mode == 'build' and (
+                is_no_budget_followup(user_input)
+                or (is_build_continue_request(user_input) and parse_total_build_budget(user_input) is None)
+                or (is_build_budget_adjustment_request(user_input) and parse_total_build_budget(user_input) is None)
+            ):
+                if is_build_budget_adjustment_request(user_input) and parse_total_build_budget(user_input) is None:
+                    final_reply = (
+                        'Sure, share your new total budget in BDT (for example: 80000 BDT), '
+                        'and I will rebuild using only your database products with price, shop, and link.'
+                    )
+                else:
+                    final_reply = estimate_minimum_build_budget_response(last_build_request or user_input)
+
+                last_purchase_mode = 'build'
+                last_build_response_text = final_reply
+                append_chat_turn(conversation, user_input, final_reply)
+                response_state = {
+                    'conversation_id': conversation_id,
+                    'last_budget': last_budget,
+                    'last_purchase_mode': last_purchase_mode,
+                    'last_lookup_context': last_lookup_context,
+                    'last_build_preferences': last_build_preferences,
+                    'last_build_request': last_build_request,
+                    'last_build_response_text': last_build_response_text,
+                    'conversation': conversation,
+                }
+                cache.set(memory_key, response_state, timeout=CHATBOT_MEMORY_TTL)
+                if session is not None:
+                    session['chatbot_state'] = response_state
+                    session['chatbot_conversation_id'] = conversation_id
+
+                return Response({
+                    'reply': final_reply,
+                    'route': route,
+                    'state': response_state,
+                })
+
+            component = detect_component_intent(user_input)
+            if component:
+                product_reply = product_lookup_response(
+                    user_input,
+                    context_component=last_lookup_context.get('component'),
+                    context_brand=last_lookup_context.get('brand'),
+                )
+                if product_reply:
+                    final_reply = format_product_lookup_response(product_reply)
+                else:
+                    final_reply = (
+                        f"I could not find in-stock {component.upper()} products for that request in your database. "
+                        'Please try another budget range or refine the component.'
+                    )
+
+                last_purchase_mode = 'lookup'
+                last_lookup_context = {'component': component}
+                brand = detect_brand_intent(user_input)
+                if brand:
+                    last_lookup_context['brand'] = brand
+                append_chat_turn(conversation, user_input, final_reply)
+                response_state = {
+                    'conversation_id': conversation_id,
+                    'last_budget': last_budget,
+                    'last_purchase_mode': last_purchase_mode,
+                    'last_lookup_context': last_lookup_context,
+                    'last_build_preferences': last_build_preferences,
+                    'last_build_request': last_build_request,
+                    'last_build_response_text': last_build_response_text,
+                    'conversation': conversation,
+                }
+                cache.set(memory_key, response_state, timeout=CHATBOT_MEMORY_TTL)
+                if session is not None:
+                    session['chatbot_state'] = response_state
+                    session['chatbot_conversation_id'] = conversation_id
+
+                return Response({
+                    'reply': final_reply,
+                    'route': route,
+                    'state': response_state,
+                })
+
+            final_reply = format_build_response_for_terminal(build_pc_response(user_input))
+            last_purchase_mode = 'build'
+            last_budget = parse_total_build_budget(user_input)
+            last_build_preferences = parse_build_preferences(user_input)
+            last_build_request = user_input
+            last_build_response_text = final_reply
+            append_chat_turn(conversation, user_input, final_reply)
+            response_state = {
+                'conversation_id': conversation_id,
+                'last_budget': last_budget,
+                'last_purchase_mode': last_purchase_mode,
+                'last_lookup_context': last_lookup_context,
+                'last_build_preferences': last_build_preferences,
+                'last_build_request': last_build_request,
+                'last_build_response_text': last_build_response_text,
+                'conversation': conversation,
+            }
+            cache.set(memory_key, response_state, timeout=CHATBOT_MEMORY_TTL)
+            if session is not None:
+                session['chatbot_state'] = response_state
+                session['chatbot_conversation_id'] = conversation_id
+
+            return Response({
+                'reply': final_reply,
+                'route': route,
+                'state': response_state,
+            })
+
+        if route == 'build_min_budget':
+            min_budget_query = last_build_request or user_input
+            final_reply = estimate_minimum_build_budget_response(min_budget_query)
+            last_purchase_mode = 'build'
+            last_build_response_text = final_reply
+            append_chat_turn(conversation, user_input, final_reply)
+
+        elif route == 'build':
+            raw_response = build_pc_response(user_input)
+            last_budget = parse_total_build_budget(user_input)
+            last_lookup_context = {}
+            last_purchase_mode = 'build'
+            last_build_preferences = parse_build_preferences(user_input)
+            last_build_request = user_input
+            final_reply = format_build_response_for_terminal(raw_response)
+            last_build_response_text = final_reply
+            append_chat_turn(conversation, user_input, final_reply)
+
+        elif route == 'build_details':
+            final_reply = last_build_response_text or 'I do not have a recent build to show yet. Please ask me to build first.'
+            append_chat_turn(conversation, user_input, final_reply)
+
+        elif route == 'build_ask_budget':
+            final_reply = (
+                'Sure, share your new total budget in BDT (for example: 80000 BDT), '
+                'and I will rebuild using only your database products with price, shop, and link.'
+            )
+            last_purchase_mode = 'build'
+            append_chat_turn(conversation, user_input, final_reply)
+
+        elif route == 'build_followup':
+            updated_budget = parse_total_build_budget(user_input) or last_budget
+            current_prefs = parse_build_preferences(user_input)
+            merged_prefs = dict(last_build_preferences)
+            merged_prefs.update(current_prefs)
+            modified_build = build_with_context(
+                user_input,
+                updated_budget,
+                preferences_override=merged_prefs,
+                base_request=last_build_request,
+            )
+            if modified_build:
+                last_budget = updated_budget
+                last_purchase_mode = 'build'
+                last_build_preferences = merged_prefs
+                last_build_request = f"{last_build_request} {user_input}".strip()
+                final_reply = modified_build
+                last_build_response_text = final_reply
+            else:
+                final_reply = (
+                    f"I couldn't create a build with those preferences and the {last_budget} BDT budget. "
+                    'Please try different specifications or a higher budget.'
+                )
+            append_chat_turn(conversation, user_input, final_reply)
+
+        elif route in {'lookup', 'lookup_followup'}:
+            next_lookup = is_lookup_next_request(user_input)
+            previous_limit = int(last_lookup_context.get('limit', 3) or 3)
+            current_limit = parse_lookup_result_limit(user_input, default_limit=previous_limit)
+            previous_offset = int(last_lookup_context.get('offset', 0) or 0)
+            lookup_offset = previous_offset + previous_limit if next_lookup else 0
+            current_mode = detect_lookup_mode(user_input) or last_lookup_context.get('mode')
+
+            product_reply = product_lookup_response(
+                user_input,
+                context_component=last_lookup_context.get('component'),
+                context_brand=last_lookup_context.get('brand'),
+                context_mode=current_mode,
+                offset=lookup_offset,
+                limit=current_limit,
+            )
+            component = detect_component_intent(user_input) or last_lookup_context.get('component')
+            brand = detect_brand_intent(user_input) or last_lookup_context.get('brand')
+            if component:
+                last_lookup_context['component'] = component
+            if brand:
+                last_lookup_context['brand'] = brand
+            last_lookup_context['offset'] = lookup_offset
+            last_lookup_context['limit'] = current_limit
+            if current_mode:
+                last_lookup_context['mode'] = current_mode
+            last_purchase_mode = 'lookup'
+
+            if product_reply:
+                final_reply = format_product_lookup_response(product_reply)
+            else:
+                wanted = f" {brand.upper()}" if brand else ''
+                final_reply = (
+                    f"I couldn't find any in-stock{wanted} {component.upper() if component else 'products'} "
+                    'in the current database. Could you try a different budget range or component type?'
+                )
+            append_chat_turn(conversation, user_input, final_reply)
+
+        else:
+            # General chat fallback.
+            casual_reply = small_talk_response(user_input)
+            if casual_reply:
+                final_reply = casual_reply
+                append_chat_turn(conversation, user_input, final_reply)
+            elif not is_pc_domain_general_question(user_input):
+                final_reply = out_of_scope_pc_redirect_response()
+                append_chat_turn(conversation, user_input, final_reply)
+            else:
+                if not conversation:
+                    conversation = [
+                        {
+                            'role': 'system',
+                            'content': (
+                                'You are BDPriceGear assistant. Chat naturally for general questions. '
+                                'For any product/build/budget shopping request, only use database-grounded flows and never invent products, prices, shops, or links.'
+                            )
+                        }
+                    ]
+
+                conversation.append({'role': 'user', 'content': user_input})
+                llm_reply = call_openrouter(conversation)
+                if llm_reply is None:
+                    final_reply = 'API key is missing or OpenRouter request failed. Add OPENROUTER_API_KEY in .env.'
+                else:
+                    final_reply = llm_reply
+                conversation.append({'role': 'assistant', 'content': final_reply})
+
+            last_purchase_mode = None
+            last_lookup_context = {}
+            last_build_preferences = {}
+            last_build_request = ''
+            last_build_response_text = ''
+
+        response_state = {
+            'conversation_id': conversation_id,
+            'last_budget': last_budget,
+            'last_purchase_mode': last_purchase_mode,
+            'last_lookup_context': last_lookup_context,
+            'last_build_preferences': last_build_preferences,
+            'last_build_request': last_build_request,
+            'last_build_response_text': last_build_response_text,
+            'conversation': conversation,
+        }
+        cache.set(memory_key, response_state, timeout=CHATBOT_MEMORY_TTL)
+        if session is not None:
+            session['chatbot_state'] = response_state
+            session['chatbot_conversation_id'] = conversation_id
+
+        return Response({
+            'reply': final_reply,
+            'route': route,
+            'state': response_state,
+        })
+    except Exception as exc:
+        logger.exception('chatbot_message failed')
+        return Response({
+            'error': f'Chatbot endpoint failed: {str(exc)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ========================================

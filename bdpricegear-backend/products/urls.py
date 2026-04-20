@@ -8,7 +8,8 @@ from .views import (
     cleanup_old_data, trigger_catalog_update, cleanup_old_products,
     run_migrations, popular_products, reset_scraping_lock,
     add_to_wishlist, get_user_wishlist, remove_from_wishlist,
-    subscribe_to_stock_notification, unsubscribe_from_stock_notification
+    subscribe_to_stock_notification, unsubscribe_from_stock_notification,
+    chatbot_message
 )
 import os
 
@@ -30,6 +31,7 @@ urlpatterns = [
     path('stock-notifications/unsubscribe/', unsubscribe_from_stock_notification, name='stock-notification-unsubscribe'),
     path('health/', health_check, name='health-check'),
     path('popular-products/', popular_products, name='popular-products'),
+    path('chatbot/', chatbot_message, name='chatbot-message'),
     path('', include(router.urls)),
 ]
 
