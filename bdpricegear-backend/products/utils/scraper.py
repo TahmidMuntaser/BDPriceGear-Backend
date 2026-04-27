@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright
 from .catalog_scraper import (
     scrape_ryans_catalog,
     get_ryans_category_url,
+    scrape_pchouse_catalog,
     scrape_computervillage_catalog,
     scrape_smartbd_catalog,
     scrape_selltech_catalog,
@@ -209,52 +210,11 @@ def scrape_skyland(product):
 # pchouse 
 def scrape_pchouse(product):
     try:
-        url = f"https://www.pchouse.com.bd/product/search?search={urllib.parse.quote(product)}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        soap = BeautifulSoup(response.text, "html.parser")
-        
-        products = []
-        
-        # Get logo
-        logo = soap.select_one(".logo img")
-        if logo:
-            logo_url = logo.get("src", "https://www.pchouse.com.bd/image/catalog/unnamed.png")
-        else:
-            logo_url = "https://www.pchouse.com.bd/image/catalog/unnamed.png"
-            
-        # Correct selector for PCHouse products
-        product_items = soap.select(".single-product-item")
-        
-        for item in product_items:
-            # Name 
-            name_elem = item.select_one("h4 a")
-            
-            # Price 
-            price_elem = item.select_one(".special-price") or item.select_one(".regular-price")
-            
-            # Image
-            img_elem = item.select_one("img")
-            
-            # Link is the
-            link_elem = item.select_one("h4 a")
-            
-            if name_elem:  
-                products.append({
-                    "id": str(uuid.uuid4()),
-                    "name": name_elem.text.strip() if name_elem else "Name not found",
-                    "price": normalize_price(price_elem.text.strip()) if price_elem else "Out Of Stock",
-                    "img": img_elem.get("src", "Image not found") if img_elem else "Image not found",
-                    "link": link_elem.get("href", "Link not found") if link_elem else "Link not found"
-                })
-            
-        return {"products": products, "logo": logo_url}
-    
+        # Reuse the more resilient catalog scraper path for realtime requests.
+        # That version already uses a pooled session, longer timeouts, redirects,
+        # and retry handling that behaves better on hosted servers.
+        return scrape_pchouse_catalog(product, max_pages=1)
     except Exception as e:
-        
         logger.error(f"pchouse error: {e}")
         return {"products": [], "logo": "logo not found"}
     
