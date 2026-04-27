@@ -213,7 +213,7 @@ def scrape_pchouse(product):
         # Reuse the more resilient catalog scraper path for realtime requests.
         # That version already uses a pooled session, longer timeouts, redirects,
         # and retry handling that behaves better on hosted servers.
-        return scrape_pchouse_catalog(product, max_pages=1)
+        return scrape_pchouse_catalog(product, max_pages=1, realtime=True)
     except Exception as e:
         logger.error(f"pchouse error: {e}")
         return {"products": [], "logo": "logo not found"}

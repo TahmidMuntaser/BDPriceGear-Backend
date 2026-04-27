@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 import uuid
 import urllib.parse
@@ -43,6 +44,24 @@ def smart_delay(min_delay=0.2, max_delay=0.5):
     # Random delay between requests to avoid rate limiting
     delay = random.uniform(min_delay, max_delay)
     time.sleep(delay)
+
+
+def _parse_pchouse_item(item):
+    name_elem = item.select_one("h4 a")
+    price_elem = item.select_one(".special-price") or item.select_one(".regular-price")
+    img_elem = item.select_one("img")
+    link_elem = item.select_one("h4 a")
+
+    if not name_elem or not link_elem:
+        return None
+
+    return {
+        "id": str(uuid.uuid4()),
+        "name": name_elem.text.strip(),
+        "price": normalize_price(price_elem.text.strip()) if price_elem else "Out of Stock",
+        "img": (img_elem.get("data-src") or img_elem.get("src") or "") if img_elem else "",
+        "link": link_elem.get("href", "") if link_elem else ""
+    }
 
 try:
     import cloudscraper
@@ -452,8 +471,13 @@ def scrape_skyland_catalog(category, max_pages=50):
         session.close()
 
 
-def scrape_pchouse_catalog(category, max_pages=50):
+def scrape_pchouse_catalog(category, max_pages=50, realtime=False):
     """Scrape all pages from PcHouse for a category"""
+    is_cloud = bool(os.getenv('RENDER') or os.getenv('DYNO'))
+    if is_cloud:
+        logger.info("PcHouse: Cloud environment detected, using Playwright fallback")
+        return asyncio.run(_scrape_pchouse_with_playwright(category, max_pages, realtime=realtime))
+
     session = create_session()
     try:
         base_url = "https://www.pchouse.com.bd/product/search"
@@ -473,10 +497,25 @@ def scrape_pchouse_catalog(category, max_pages=50):
             logger.info(f"PcHouse: Scraping page {page} for {category}")
 
             try:
-                response = session.get(url, headers=headers, timeout=30, allow_redirects=True)
+                response = session.get(
+                    url,
+                    headers=headers,
+                    timeout=10 if realtime else 30,
+                    allow_redirects=True,
+                )
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(e.response, "status_code", None)
+                if status_code == 403:
+                    logger.warning(f"PcHouse: Page {page} returned 403, switching to Playwright fallback")
+                    return asyncio.run(_scrape_pchouse_with_playwright(category, max_pages, realtime=realtime))
+                logger.error(f"PcHouse: HTTP error on page {page}: {e}")
+                break
             except requests.exceptions.Timeout:
+                if realtime:
+                    logger.warning(f"PcHouse: Realtime timeout on page {page}")
+                    break
                 logger.warning(f"PcHouse: Timeout on page {page}, retrying once...")
                 try:
                     response = session.get(url, headers=headers, timeout=45)
@@ -500,19 +539,9 @@ def scrape_pchouse_catalog(category, max_pages=50):
             consecutive_empty = 0
             
             for item in items:
-                name_elem = item.select_one("h4 a")
-                price_elem = item.select_one(".special-price") or item.select_one(".regular-price")
-                img_elem = item.select_one("img")
-                link_elem = item.select_one("h4 a")
-                
-                if name_elem and link_elem:
-                    products.append({
-                        "id": str(uuid.uuid4()),
-                        "name": name_elem.text.strip(),
-                        "price": normalize_price(price_elem.text.strip()) if price_elem else "Out of Stock",
-                        "img": (img_elem.get("data-src") or img_elem.get("src") or "") if img_elem else "",
-                        "link": link_elem.get("href", "") if link_elem else ""
-                    })
+                parsed = _parse_pchouse_item(item)
+                if parsed:
+                    products.append(parsed)
             
             page += 1
             smart_delay(0.2, 0.5)  # Small delay between pages
@@ -525,6 +554,74 @@ def scrape_pchouse_catalog(category, max_pages=50):
         return {"products": [], "logo": ""}
     finally:
         session.close()
+
+
+async def _scrape_pchouse_with_playwright(category, max_pages=50, realtime=False):
+    logo_url = "https://www.pchouse.com.bd/image/catalog/unnamed.png"
+    products = []
+    base_url = "https://www.pchouse.com.bd/product/search"
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                ]
+            )
+            context = await browser.new_context(
+                viewport={'width': 1600, 'height': 900},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                locale='en-US',
+                timezone_id='Asia/Dhaka',
+                extra_http_headers={
+                    'Accept-Language': 'en-US,en;q=0.9,bn;q=0.8',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Referer': 'https://www.google.com/',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+            )
+            page = await context.new_page()
+
+            for page_num in range(1, max_pages + 1):
+                url = f"{base_url}?search={urllib.parse.quote(category)}&page={page_num}"
+                logger.info(f"PcHouse (Playwright): page {page_num} for {category}")
+
+                try:
+                    timeout_ms = 10000 if realtime else 30000
+                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    await page.wait_for_load_state("networkidle", timeout=10000 if realtime else 12000)
+                except PlaywrightTimeout:
+                    logger.warning(f"PcHouse (Playwright): Timeout on page {page_num}")
+                    if page_num == 1:
+                        continue
+                    break
+
+                soup = BeautifulSoup(await page.content(), "html.parser")
+                items = soup.select(".single-product-item")
+                if not items:
+                    if page_num > 1:
+                        break
+                    continue
+
+                for item in items:
+                    parsed = _parse_pchouse_item(item)
+                    if parsed:
+                        products.append(parsed)
+
+                smart_delay(0.2, 0.5)
+
+            await context.close()
+            await browser.close()
+
+        logger.info(f"PcHouse (Playwright): Total scraped {len(products)} products for {category}")
+        return {"products": products, "logo": logo_url}
+    except Exception as e:
+        logger.error(f"PcHouse (Playwright) error: {e}", exc_info=True)
+        return {"products": [], "logo": logo_url}
 
 
 def scrape_ultratech_catalog(category, max_pages=50):
