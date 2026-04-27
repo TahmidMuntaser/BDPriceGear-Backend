@@ -16,7 +16,7 @@ import uuid
 from .utils.cache_manager import price_cache
 from .utils.scraper import (
     scrape_startech, scrape_skyland,
-    scrape_pchouse, scrape_ultratech, scrape_potakait,
+    scrape_pchouse, scrape_ultratech,
     scrape_computervillage, scrape_smartbd, scrape_selltech, scrape_globalbrand
 )
 from .models import Product, Category, Shop, Wishlist
@@ -190,7 +190,6 @@ def price_comparison(request):
                 executor.submit(scrape_skyland, product),
                 executor.submit(scrape_pchouse, product),
                 executor.submit(scrape_ultratech, product),
-                executor.submit(scrape_potakait, product),
                 executor.submit(scrape_computervillage, product),
                 executor.submit(scrape_smartbd, product),
                 executor.submit(scrape_selltech, product),
@@ -204,7 +203,6 @@ def price_comparison(request):
         skyland,
         pchouse,
         ultratech,
-        potakait,
         computervillage,
         smartbd,
         selltech,
@@ -218,7 +216,6 @@ def price_comparison(request):
         {"name": "SkyLand", **skyland},
         {"name": "PcHouse", **pchouse},
         {"name": "UltraTech", **ultratech},
-        {"name": "PotakaIT", **potakait},
         {"name": "ComputerVillage", **computervillage},
         {"name": "SmartBD", **smartbd},
         {"name": "SellTech", **selltech},

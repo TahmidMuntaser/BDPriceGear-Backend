@@ -11,11 +11,12 @@ from playwright.async_api import async_playwright
 from .catalog_scraper import (
     scrape_ryans_catalog,
     get_ryans_category_url,
-    scrape_potakait_catalog,
     scrape_computervillage_catalog,
     scrape_smartbd_catalog,
     scrape_selltech_catalog,
     scrape_globalbrand_catalog,
+    create_session,
+    get_random_user_agent,
 )
 
 try:
@@ -260,27 +261,55 @@ def scrape_pchouse(product):
 
 # ultratech 
 def scrape_ultratech(product):
+    session = create_session()
     try:
         url = f"https://www.ultratech.com.bd/index.php?route=product/search&search={urllib.parse.quote(product)}"
-        response = requests.get(url, timeout=10)
-        soap = BeautifulSoup(response.text, "html.parser")
+        headers = {
+            "User-Agent": get_random_user_agent(),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/",
+        }
+        response = session.get(url, headers=headers, timeout=20)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
         
         products = []
         
         logo_url = "https://www.ultratech.com.bd/image/cache/catalog/website/logo/ultra-technology-header-logo-500x500.png.webp"
-            
-        for item in soap.select(".product-layout"):
-            name = item.select_one(".name")
-            price = item.select_one(".price-new")
+
+        for item in soup.select(".product-layout"):
+            name = (
+                item.select_one(".caption .name a")
+                or item.select_one(".name a")
+                or item.select_one(".caption .name")
+            )
+            price = (
+                item.select_one(".price-new")
+                or item.select_one(".price-normal")
+                or item.select_one(".price")
+            )
             img = item.select_one(".product-img img")
-            link = item.select_one(".product-img")
+            link = item.select_one("a.product-img")
+
+            if not name or not link:
+                continue
+
+            image_url = ""
+            if img:
+                image_url = img.get("data-src") or img.get("src") or ""
+                if image_url and not image_url.startswith(("http://", "https://")):
+                    image_url = urllib.parse.urljoin(url, image_url)
+
+            product_link = link.get("href", "")
+            if product_link and not product_link.startswith(("http://", "https://")):
+                product_link = urllib.parse.urljoin(url, product_link)
             
             products.append({
                     "id": str(uuid.uuid4()),
-                    "name": name.text.strip() if name else "Name not found",
-                    "price": normalize_price(price.text.strip()) if price else "Out Of Stock",
-                    "img": img["src"] if img else "Image not found",
-                    "link": link["href"] if link else "Link not found"
+                    "name": name.get_text(strip=True),
+                    "price": normalize_price(price.get_text(" ", strip=True)) if price else "Out Of Stock",
+                    "img": image_url or "Image not found",
+                    "link": product_link or "Link not found"
             })
             
         return {"products": products, "logo": logo_url}
@@ -289,6 +318,8 @@ def scrape_ultratech(product):
         
         logger.error(f"UltraTech error: {e}")
         return {"products": [], "logo": "logo not found"}
+    finally:
+        session.close()
 
 
 # binary playwright
@@ -323,17 +354,6 @@ async def scrape_binary_playwright(product, context):
     except Exception as e:
         logger.error(f"Binary Playwright error: {e}")
         return results
-
-    
-# potakaIT 
-def scrape_potakait(product):
-    try:
-        # Reuse catalog scraper URL/selectors and limit to first page.
-        return scrape_potakait_catalog(product, max_pages=1)
-    except Exception as e:
-        logger.error(f"PotakaIT error: {e}")
-        return {"products": [], "logo": "logo not found"}
-
 
 def scrape_computervillage(product):
     try:

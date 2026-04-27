@@ -654,19 +654,27 @@ def scrape_potakait_catalog(category, max_pages=50):
                 name_tag = item.select_one(".title a")
                 price_tag = item.select_one(".price-info .price")
                 img_tag = item.select_one(".product-img img")
-                stock_tag = item.select_one(".add-to-cart")
+                stock_tag = (
+                    item.select_one(".add-to-cart")
+                    or item.select_one(".cart")
+                    or item.select_one(".button-group")
+                    or item.select_one(".product-action")
+                )
                 
                 if not name_tag:
                     continue
                 
-                in_stock = True
-                if stock_tag and "Out Of Stock" in stock_tag.get("class", []):
-                    in_stock = False
+                stock_text = stock_tag.get_text(" ", strip=True).lower() if stock_tag else ""
+                stock_classes = " ".join(stock_tag.get("class", [])).lower() if stock_tag else ""
+                in_stock = not any(
+                    phrase in stock_text or phrase in stock_classes
+                    for phrase in ("out of stock", "stock out", "sold out", "unavailable")
+                )
                 
                 products.append({
                     "id": str(uuid.uuid4()),
                     "name": name_tag.text.strip(),
-                    "price": normalize_price(price_tag.text.strip()) if price_tag else "Out of Stock",
+                    "price": normalize_price(price_tag.text.strip()) if price_tag and in_stock else "Out of Stock",
                     "img": (img_tag.get("data-src") or img_tag.get("src") or "") if img_tag else "",
                     "link": name_tag["href"] if name_tag else "",
                     "in_stock": in_stock
@@ -1399,4 +1407,3 @@ async def scrape_ryans_playwright(playwright_page, category, max_pages=50):
 
     logger.info(f"Ryans (Playwright): Total {len(products)} products for {category}")
     return {"products": products, "logo": logo_url}
-
